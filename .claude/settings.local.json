@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose up:*)",
+      "Bash(docker:*)",
+      "Bash(docker info:*)",
+      "Bash(curl:*)",
+      "Bash(for service in chat-service model-gateway)",
+      "Bash(do mv:*)",
+      "Bash(done)",
+      "Bash(python -m json.tool:*)"
+    ]
+  }
+}

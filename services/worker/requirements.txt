@@ -1,0 +1,14 @@
+celery==5.3.6
+redis==5.0.1
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.25
+minio==7.2.3
+qdrant-client==1.7.3
+openai==1.10.0
+httpx==0.26.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+pypdf==4.0.1
+python-magic==0.4.27
+pydantic==2.5.3
+pydantic-settings==2.1.0
