@@ -22,7 +22,13 @@ from common.schemas import DocumentCreate, DocumentResponse, TaskResponse
 from common.exceptions import NotFoundError, AuthenticationError
 
 # Initialize app
-app = FastAPI(title="KB Service", version="1.0.0")
+app = FastAPI(
+    title="KB Service",
+    version="1.0.0",
+    docs_url="/kb/docs",
+    openapi_url="/kb/openapi.json",
+    redoc_url="/kb/redoc"
+)
 settings = Settings()
 db = Database(settings.postgres_url)
 
@@ -95,10 +101,11 @@ async def upload_document(
     try:
         # Upload to MinIO
         file_content = await file.read()
+        from io import BytesIO
         minio_client.put_object(
             settings.minio_bucket,
             object_name,
-            data=file_content,
+            data=BytesIO(file_content),
             length=len(file_content),
             content_type=file.content_type or "application/octet-stream"
         )
@@ -122,7 +129,7 @@ async def upload_document(
         task = celery_app.send_task(
             "worker.process_document",
             args=[str(document.id)],
-            queue="default"
+            queue="celery"
         )
 
         # Create ingestion task record

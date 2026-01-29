@@ -20,7 +20,13 @@ from common.auth import hash_password, verify_password, create_access_token, dec
 from common.exceptions import AuthenticationError, ConflictError, NotFoundError
 
 # Initialize app
-app = FastAPI(title="Auth Service", version="1.0.0")
+app = FastAPI(
+    title="Auth Service",
+    version="1.0.0",
+    docs_url="/auth/docs",
+    openapi_url="/auth/openapi.json",
+    redoc_url="/auth/redoc"
+)
 settings = Settings()
 db = Database(settings.postgres_url)
 security = HTTPBearer()

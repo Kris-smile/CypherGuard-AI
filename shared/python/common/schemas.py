@@ -1,7 +1,7 @@
 """Pydantic schemas for API requests and responses"""
 
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
 
@@ -75,3 +75,75 @@ class TaskResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Mode schemas
+class ModeResponse(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str]
+    top_k: int
+    top_n: int
+    min_score: float
+    require_citations: bool
+    no_evidence_behavior: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Conversation schemas
+class ConversationCreate(BaseModel):
+    mode_name: Optional[str] = "quick"
+    title: Optional[str] = None
+
+
+class ConversationResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    mode_id: UUID
+    title: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Citation schema
+class Citation(BaseModel):
+    document_id: str
+    title: str
+    source_type: str
+    source_uri: str
+    chunk_id: str
+    chunk_index: int
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    snippet: str
+    score: float
+
+
+# Message schemas
+class MessageCreate(BaseModel):
+    content: str
+
+
+class MessageResponse(BaseModel):
+    id: UUID
+    conversation_id: UUID
+    role: str
+    content: str
+    citations_json: Optional[List[Citation]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Chat response with full trace
+class ChatResponse(BaseModel):
+    answer: str
+    citations: List[Citation]
+    mode: str
+    trace: Dict[str, Any]

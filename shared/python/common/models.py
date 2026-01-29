@@ -81,3 +81,40 @@ class ModelConfig(Base):
     enabled = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Mode(Base):
+    __tablename__ = "modes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), unique=True, nullable=False)
+    description = Column(Text)
+    system_prompt = Column(Text, nullable=False)
+    top_k = Column(Integer, default=20)
+    top_n = Column(Integer, default=6)
+    min_score = Column(Float, default=0.0)
+    require_citations = Column(Boolean, default=True)
+    no_evidence_behavior = Column(String(30), nullable=False, default="refuse")
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mode_id = Column(UUID(as_uuid=True), ForeignKey("modes.id"), nullable=False)
+    title = Column(Text)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    citations_json = Column(JSON)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
