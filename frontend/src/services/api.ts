@@ -150,6 +150,35 @@ export interface ChatResponse {
   };
 }
 
+export interface ModelConfig {
+  id: string;
+  name: string;
+  model_type: 'embedding' | 'chat' | 'rerank';
+  provider: string;
+  base_url?: string;
+  model_name: string;
+  api_key_encrypted?: string;
+  is_default: boolean;
+  params_json?: Record<string, any>;
+  max_concurrency: number;
+  rate_limit_rpm?: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelConfigCreate {
+  name: string;
+  model_type: string;
+  provider: string;
+  base_url?: string;
+  model_name: string;
+  api_key: string;
+  max_concurrency?: number;
+  rate_limit_rpm?: number;
+  enabled?: boolean;
+}
+
 // ============== Auth API ==============
 
 export const authAPI = {
@@ -242,6 +271,46 @@ export const chatAPI = {
     const response = await apiClient.post<ChatResponse>(
       `/chat/conversations/${conversationId}/messages`,
       { content }
+    );
+    return response.data;
+  },
+};
+
+// ============== Settings API ==============
+
+export const settingsAPI = {
+  // Model Management
+  listModels: async (): Promise<ModelConfig[]> => {
+    const response = await apiClient.get<ModelConfig[]>('/models');
+    return response.data;
+  },
+
+  getModel: async (id: string): Promise<ModelConfig> => {
+    const response = await apiClient.get<ModelConfig>(`/models/${id}`);
+    return response.data;
+  },
+
+  createModel: async (data: ModelConfigCreate): Promise<ModelConfig> => {
+    const response = await apiClient.post<ModelConfig>('/models', data);
+    return response.data;
+  },
+
+  updateModel: async (id: string, data: Partial<ModelConfigCreate>): Promise<ModelConfig> => {
+    const response = await apiClient.put<ModelConfig>(`/models/${id}`, data);
+    return response.data;
+  },
+
+  deleteModel: async (id: string): Promise<void> => {
+    await apiClient.delete(`/models/${id}`);
+  },
+
+  setDefaultModel: async (id: string): Promise<void> => {
+    await apiClient.post(`/models/${id}/set-default`);
+  },
+
+  testModel: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post<{ success: boolean; message: string }>(
+      `/models/${id}/test`
     );
     return response.data;
   },

@@ -147,3 +147,49 @@ class ChatResponse(BaseModel):
     citations: List[Citation]
     mode: str
     trace: Dict[str, Any]
+
+
+# Model Config schemas
+class ModelConfigCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    model_type: str = Field(..., pattern="^(embedding|chat|rerank)$")
+    provider: str = Field(..., min_length=1, max_length=100)
+    base_url: Optional[str] = None
+    model_name: str = Field(..., min_length=1, max_length=255)
+    api_key: str = Field(..., min_length=1)
+    params_json: Optional[Dict[str, Any]] = None
+    max_concurrency: int = Field(default=4, ge=1, le=100)
+    rate_limit_rpm: Optional[int] = Field(default=None, ge=0)
+    enabled: bool = True
+
+
+class ModelConfigUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    model_type: Optional[str] = Field(None, pattern="^(embedding|chat|rerank)$")
+    provider: Optional[str] = Field(None, min_length=1, max_length=100)
+    base_url: Optional[str] = None
+    model_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    api_key: Optional[str] = Field(None, min_length=1)
+    params_json: Optional[Dict[str, Any]] = None
+    max_concurrency: Optional[int] = Field(None, ge=1, le=100)
+    rate_limit_rpm: Optional[int] = Field(None, ge=0)
+    enabled: Optional[bool] = None
+
+
+class ModelConfigResponse(BaseModel):
+    id: UUID
+    name: str
+    model_type: str
+    provider: str
+    base_url: Optional[str]
+    model_name: str
+    is_default: bool
+    params_json: Optional[Dict[str, Any]]
+    max_concurrency: int
+    rate_limit_rpm: Optional[int]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

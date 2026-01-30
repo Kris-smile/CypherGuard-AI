@@ -19,6 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Chat from './Chat';
 import KnowledgeBase from './KnowledgeBase';
+import Settings from './Settings';
 
 type NavItem = {
   id: string;
@@ -56,7 +57,7 @@ export default function Dashboard() {
       case 'models':
         return <PlaceholderContent title="Model Configuration" icon={Cpu} />;
       case 'settings':
-        return <PlaceholderContent title="System Settings" icon={Settings} />;
+        return <Settings />;
       default:
         return <PlaceholderContent title="Dashboard" icon={Activity} />;
     }

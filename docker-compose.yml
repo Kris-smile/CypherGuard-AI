@@ -88,6 +88,7 @@ services:
       - kb-service
       - chat-service
       - model-gateway
+      - model-config-service
       - frontend
     networks:
       - cypherguard-network
@@ -202,6 +203,25 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+    networks:
+      - cypherguard-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  model-config-service:
+    build:
+      context: .
+      dockerfile: services/model-config-service/Dockerfile
+    container_name: cypherguard-model-config
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-cypherguard}
+      JWT_SECRET: ${JWT_SECRET:-change-this-secret-in-production}
+    depends_on:
+      postgres:
         condition: service_healthy
     networks:
       - cypherguard-network
