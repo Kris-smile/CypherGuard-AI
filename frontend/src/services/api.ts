@@ -314,6 +314,19 @@ export const settingsAPI = {
     );
     return response.data;
   },
+
+  testOllamaConnection: async (baseUrl: string, modelType: string): Promise<{
+    success: boolean;
+    message: string;
+    models: Array<{ name: string; size: number; modified_at: string }>;
+    base_url: string;
+  }> => {
+    const response = await apiClient.post('/models/test-ollama-connection', {
+      base_url: baseUrl,
+      model_type: modelType,
+    });
+    return response.data;
+  },
 };
 
 export default apiClient;

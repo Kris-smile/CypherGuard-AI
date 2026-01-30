@@ -244,6 +244,72 @@ async def test_model(
     }
 
 
+@app.post("/models/test-ollama-connection")
+async def test_ollama_connection(request: dict):
+    """Test Ollama connection and return available models"""
+    import httpx
+    
+    base_url = request.get("base_url", "http://localhost:11434")
+    model_type = request.get("model_type", "chat")
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Test connection
+            response = await client.get(f"{base_url}/api/tags")
+            response.raise_for_status()
+            data = response.json()
+            
+            # Filter models by type
+            all_models = data.get("models", [])
+            
+            # Ollama doesn't explicitly mark model types, so we use heuristics
+            # Embedding models usually have "embed" in the name
+            # Chat models are everything else
+            filtered_models = []
+            for model in all_models:
+                model_name = model.get("name", "")
+                if model_type == "embedding":
+                    if "embed" in model_name.lower():
+                        filtered_models.append({
+                            "name": model_name,
+                            "size": model.get("size", 0),
+                            "modified_at": model.get("modified_at", "")
+                        })
+                elif model_type == "chat":
+                    if "embed" not in model_name.lower():
+                        filtered_models.append({
+                            "name": model_name,
+                            "size": model.get("size", 0),
+                            "modified_at": model.get("modified_at", "")
+                        })
+                else:
+                    # For rerank, return empty (Ollama doesn't support rerank)
+                    pass
+            
+            return {
+                "success": True,
+                "message": f"成功连接到 Ollama，发现 {len(filtered_models)} 个{model_type}模型",
+                "models": filtered_models,
+                "base_url": base_url
+            }
+            
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503,
+            detail=f"无法连接到 Ollama 服务 ({base_url})，请确保 Ollama 正在运行"
+        )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="连接 Ollama 超时，请检查网络或服务状态"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"测试连接失败: {str(e)}"
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

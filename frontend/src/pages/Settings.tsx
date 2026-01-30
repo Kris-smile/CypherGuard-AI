@@ -325,6 +325,13 @@ function ModelFormModal({
 }) {
   const [loading, setLoading] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<{
+    success: boolean;
+    message: string;
+    models?: Array<{ name: string; size: number; modified_at: string }>;
+  } | null>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     name: model?.name || '',
     model_type: model?.model_type || 'chat',
@@ -337,15 +344,76 @@ function ModelFormModal({
     enabled: model?.enabled ?? true,
   });
 
+  // Check if provider is Ollama
+  const isOllama = formData.provider === 'ollama';
+
+  // Set default base URL for Ollama
+  useEffect(() => {
+    if (isOllama && !formData.base_url) {
+      setFormData(prev => ({ ...prev, base_url: 'http://localhost:11434' }));
+    }
+  }, [isOllama]);
+
+  // Test Ollama connection
+  const handleTestConnection = async () => {
+    if (!formData.base_url) {
+      alert('请先填写 Base URL');
+      return;
+    }
+
+    setTestingConnection(true);
+    setConnectionTestResult(null);
+
+    try {
+      const result = await settingsAPI.testOllamaConnection(
+        formData.base_url,
+        formData.model_type
+      );
+      
+      setConnectionTestResult(result);
+      
+      if (result.success && result.models) {
+        const modelNames = result.models.map(m => m.name);
+        setAvailableModels(modelNames);
+        
+        // Auto-select first model if none selected
+        if (!formData.model_name && modelNames.length > 0) {
+          setFormData(prev => ({ ...prev, model_name: modelNames[0] }));
+        }
+      }
+    } catch (error: any) {
+      setConnectionTestResult({
+        success: false,
+        message: error.response?.data?.detail || '连接测试失败'
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate: Ollama doesn't need API key
+    if (!isOllama && !model && !formData.api_key) {
+      alert('请填写 API Key');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      const submitData = { ...formData };
+      
+      // For Ollama, set a dummy API key if not provided
+      if (isOllama && !submitData.api_key) {
+        submitData.api_key = 'ollama-no-key-needed';
+      }
+
       if (model) {
-        await settingsAPI.updateModel(model.id, formData);
+        await settingsAPI.updateModel(model.id, submitData);
       } else {
-        await settingsAPI.createModel(formData);
+        await settingsAPI.createModel(submitData);
       }
       onSuccess();
     } catch (error) {
@@ -445,58 +513,135 @@ function ModelFormModal({
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Base URL
+                  Base URL {isOllama && '*'}
                 </label>
-                <input
-                  type="url"
-                  value={formData.base_url}
-                  onChange={(e) => setFormData({ ...formData, base_url: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="https://api.openai.com/v1"
-                />
-                <p className="text-xs text-slate-500 mt-1">留空使用默认地址</p>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    required={isOllama}
+                    value={formData.base_url}
+                    onChange={(e) => setFormData({ ...formData, base_url: e.target.value })}
+                    className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder={isOllama ? "http://localhost:11434" : "https://api.openai.com/v1"}
+                  />
+                  {isOllama && (
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={testingConnection || !formData.base_url}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                    >
+                      {testingConnection ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          测试中...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4" />
+                          测试连接
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {isOllama ? 'Ollama 服务地址' : '留空使用默认地址'}
+                </p>
               </div>
+
+              {/* Connection test result */}
+              {connectionTestResult && (
+                <div className={cn(
+                  "p-4 rounded-lg border flex items-start gap-3",
+                  connectionTestResult.success
+                    ? "bg-green-50 border-green-200"
+                    : "bg-red-50 border-red-200"
+                )}>
+                  {connectionTestResult.success ? (
+                    <Check className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <p className={cn(
+                      "text-sm font-medium",
+                      connectionTestResult.success ? "text-green-900" : "text-red-900"
+                    )}>
+                      {connectionTestResult.message}
+                    </p>
+                    {connectionTestResult.models && connectionTestResult.models.length > 0 && (
+                      <p className="text-xs text-green-700 mt-1">
+                        发现模型: {connectionTestResult.models.map(m => m.name).join(', ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   模型名称 *
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.model_name}
-                  onChange={(e) => setFormData({ ...formData, model_name: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="gpt-4o-mini"
-                />
+                {isOllama && availableModels.length > 0 ? (
+                  <select
+                    required
+                    value={formData.model_name}
+                    onChange={(e) => setFormData({ ...formData, model_name: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">选择模型</option>
+                    {availableModels.map((modelName) => (
+                      <option key={modelName} value={modelName}>
+                        {modelName}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    required
+                    value={formData.model_name}
+                    onChange={(e) => setFormData({ ...formData, model_name: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder={isOllama ? "llama3.2 或 nomic-embed-text" : "gpt-4o-mini"}
+                  />
+                )}
+                {isOllama && availableModels.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    点击"测试连接"自动检测可用模型
+                  </p>
+                )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  API Key {!model && '*'}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    required={!model}
-                    value={formData.api_key}
-                    onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
-                    className="w-full px-4 py-2 pr-12 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder={model ? '留空保持不变' : 'sk-...'}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded"
-                  >
-                    {showApiKey ? (
-                      <EyeOff className="h-4 w-4 text-slate-400" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-slate-400" />
-                    )}
-                  </button>
+              {!isOllama && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    API Key {!model && '*'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      required={!model}
+                      value={formData.api_key}
+                      onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
+                      className="w-full px-4 py-2 pr-12 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder={model ? '留空保持不变' : 'sk-...'}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded"
+                    >
+                      {showApiKey ? (
+                        <EyeOff className="h-4 w-4 text-slate-400" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -546,14 +691,39 @@ function ModelFormModal({
           </div>
 
           {/* 提示信息 */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex gap-3">
-            <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-900">
-              <p className="font-medium mb-1">配置提示</p>
-              <ul className="list-disc list-inside space-y-1 text-blue-800">
-                <li>API Key 将被加密存储</li>
-                <li>建议根据实际使用情况调整并发数和速率限制</li>
-                <li>Ollama 模型无需 API Key</li>
+          <div className={cn(
+            "border rounded-lg p-4 flex gap-3",
+            isOllama ? "bg-green-50 border-green-200" : "bg-blue-50 border-blue-200"
+          )}>
+            <AlertCircle className={cn(
+              "h-5 w-5 flex-shrink-0 mt-0.5",
+              isOllama ? "text-green-600" : "text-blue-600"
+            )} />
+            <div className="text-sm">
+              <p className={cn(
+                "font-medium mb-1",
+                isOllama ? "text-green-900" : "text-blue-900"
+              )}>
+                {isOllama ? 'Ollama 本地模型配置' : '配置提示'}
+              </p>
+              <ul className={cn(
+                "list-disc list-inside space-y-1",
+                isOllama ? "text-green-800" : "text-blue-800"
+              )}>
+                {isOllama ? (
+                  <>
+                    <li>Ollama 是本地运行的模型，无需 API Key</li>
+                    <li>确保 Ollama 服务正在运行（默认端口 11434）</li>
+                    <li>点击"测试连接"自动检测可用模型</li>
+                    <li>Embedding 模型通常包含 "embed" 关键词</li>
+                  </>
+                ) : (
+                  <>
+                    <li>API Key 将被加密存储</li>
+                    <li>建议根据实际使用情况调整并发数和速率限制</li>
+                    <li>不同提供商的 Base URL 格式可能不同</li>
+                  </>
+                )}
               </ul>
             </div>
           </div>
