@@ -4,7 +4,7 @@ import {
   MessageSquare, 
   Database, 
   Cpu, 
-  Settings, 
+  Settings as SettingsIcon, 
   ChevronLeft, 
   ChevronRight,
   LogOut,
@@ -32,7 +32,7 @@ const navItems: NavItem[] = [
   { id: 'chat', label: 'Neural Chat', icon: MessageSquare, badge: 'AI' },
   { id: 'kb', label: 'Knowledge Core', icon: Database },
   { id: 'models', label: 'Model Nexus', icon: Cpu },
-  { id: 'settings', label: 'System Config', icon: Settings },
+  { id: 'settings', label: 'System Config', icon: SettingsIcon },
 ];
 
 export default function Dashboard() {
