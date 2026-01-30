@@ -30,6 +30,16 @@ class Settings(BaseSettings):
 
     # Model Gateway
     model_gateway_url: Optional[str] = "http://model-gateway:8000"
+    model_gateway_max_concurrency_embedding: int = 4
+    model_gateway_max_concurrency_chat: int = 4
+    model_gateway_max_concurrency_rerank: int = 4
+    model_gateway_rate_limit_rpm_embedding: int = 120
+    model_gateway_rate_limit_rpm_chat: int = 60
+    model_gateway_rate_limit_rpm_rerank: int = 120
+    model_gateway_timeout_seconds_embedding: int = 60
+    model_gateway_timeout_seconds_chat: int = 120
+    model_gateway_timeout_seconds_rerank: int = 30
+    model_gateway_acquire_timeout_seconds: float = 0.05
 
     # Upload limits
     upload_max_mb: int = 100

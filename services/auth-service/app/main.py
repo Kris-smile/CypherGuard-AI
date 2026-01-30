@@ -3,6 +3,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from typing import Optional
@@ -27,6 +28,16 @@ app = FastAPI(
     openapi_url="/auth/openapi.json",
     redoc_url="/auth/redoc"
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 允许所有来源
+    allow_credentials=True,
+    allow_methods=["*"],  # 允许所有方法
+    allow_headers=["*"],  # 允许所有头
+)
+
 settings = Settings()
 db = Database(settings.postgres_url)
 security = HTTPBearer()
@@ -109,16 +120,18 @@ async def register(user_data: UserCreate, session: Session = Depends(get_db)):
 
 @app.post("/auth/login", response_model=TokenResponse)
 async def login(credentials: UserLogin, session: Session = Depends(get_db)):
-    """Login user and return JWT token"""
-    # Find user by email
-    user = session.query(User).filter(User.email == credentials.email).first()
+    """Login user and return JWT token (supports email or username)"""
+    # Try to find user by email or username
+    user = session.query(User).filter(
+        (User.email == credentials.email) | (User.username == credentials.email)
+    ).first()
 
     if not user:
-        raise AuthenticationError("Invalid email or password")
+        raise AuthenticationError("Invalid email/username or password")
 
     # Verify password
     if not verify_password(credentials.password, user.password_hash):
-        raise AuthenticationError("Invalid email or password")
+        raise AuthenticationError("Invalid email/username or password")
 
     # Create access token
     access_token = create_access_token(
