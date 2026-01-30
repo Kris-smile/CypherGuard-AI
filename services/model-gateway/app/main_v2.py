@@ -454,11 +454,7 @@ async def create_embeddings(
             print(f"[Model Gateway] Unknown provider {model_config.provider}, using mock")
             return await call_mock_embedding(request.texts)
             
-    except HTTPException as e:
-        # If no model config found, fall back to mock
-        if e.status_code == status.HTTP_404_NOT_FOUND:
-            print(f"[Model Gateway] No embedding model configured, using mock")
-            return await call_mock_embedding(request.texts)
+    except HTTPException:
         raise
     except Exception as e:
         print(f"[Model Gateway] Error in embeddings: {e}, falling back to mock")
@@ -495,11 +491,7 @@ async def create_chat(
             print(f"[Model Gateway] Unknown provider {model_config.provider}, using mock")
             return await call_mock_chat(request.messages)
             
-    except HTTPException as e:
-        # If no model config found, fall back to mock
-        if e.status_code == status.HTTP_404_NOT_FOUND:
-            print(f"[Model Gateway] No chat model configured, using mock")
-            return await call_mock_chat(request.messages)
+    except HTTPException:
         raise
     except Exception as e:
         print(f"[Model Gateway] Error in chat: {e}, falling back to mock")
@@ -529,11 +521,7 @@ async def rerank_documents(
             print(f"[Model Gateway] Unknown provider {model_config.provider}, using mock")
             return await call_mock_rerank(request.query, request.documents, request.top_n)
             
-    except HTTPException as e:
-        # If no model config found, fall back to mock
-        if e.status_code == status.HTTP_404_NOT_FOUND:
-            print(f"[Model Gateway] No rerank model configured, using mock")
-            return await call_mock_rerank(request.query, request.documents, request.top_n)
+    except HTTPException:
         raise
     except Exception as e:
         print(f"[Model Gateway] Error in rerank: {e}, falling back to mock")
