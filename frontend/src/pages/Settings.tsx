@@ -350,7 +350,7 @@ function ModelFormModal({
   // Set default base URL for Ollama
   useEffect(() => {
     if (isOllama && !formData.base_url) {
-      setFormData(prev => ({ ...prev, base_url: 'http://localhost:11434' }));
+      setFormData(prev => ({ ...prev, base_url: 'http://host.docker.internal:11434' }));
     }
   }, [isOllama]);
 
@@ -522,7 +522,7 @@ function ModelFormModal({
                     value={formData.base_url}
                     onChange={(e) => setFormData({ ...formData, base_url: e.target.value })}
                     className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder={isOllama ? "http://localhost:11434" : "https://api.openai.com/v1"}
+                    placeholder={isOllama ? "http://host.docker.internal:11434" : "https://api.openai.com/v1"}
                   />
                   {isOllama && (
                     <button
