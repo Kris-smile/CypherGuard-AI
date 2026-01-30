@@ -9,7 +9,13 @@
       "Bash(do mv:*)",
       "Bash(done)",
       "Bash(python -m json.tool:*)",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhYmY1NjI2NS0zZmNkLTQ5ZGYtODhiMC0wNTEzZjkyNDY0ZjMiLCJlbWFpbCI6ImRlbW9AZXhhbXBsZS5jb20iLCJyb2xlIjoidXNlciIsImV4cCI6MTc2OTY5MDQ0MH0.Tj1OgxhnibEbPf3nKuUXmdRX4w3MW84WYlq7g8sNFEQ\":*)"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhYmY1NjI2NS0zZmNkLTQ5ZGYtODhiMC0wNTEzZjkyNDY0ZjMiLCJlbWFpbCI6ImRlbW9AZXhhbXBsZS5jb20iLCJyb2xlIjoidXNlciIsImV4cCI6MTc2OTY5MDQ0MH0.Tj1OgxhnibEbPf3nKuUXmdRX4w3MW84WYlq7g8sNFEQ\":*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(timeout 5)",
+      "Bash(ping:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }

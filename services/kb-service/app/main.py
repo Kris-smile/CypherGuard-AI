@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, status, Form
 from fastapi.responses import PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from minio import Minio
 from minio.error import S3Error
@@ -29,6 +30,16 @@ app = FastAPI(
     openapi_url="/kb/openapi.json",
     redoc_url="/kb/redoc"
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 settings = Settings()
 db = Database(settings.postgres_url)
 

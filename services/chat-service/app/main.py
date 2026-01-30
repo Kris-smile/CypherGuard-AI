@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from qdrant_client import QdrantClient
 from typing import List, Optional
@@ -31,6 +32,16 @@ app = FastAPI(
     openapi_url="/chat/openapi.json",
     redoc_url="/chat/redoc"
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 settings = Settings()
 db = Database(settings.postgres_url)
 
