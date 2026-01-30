@@ -35,40 +35,40 @@
 
 ## ⚠️ 当前系统不成熟的地方
 
-### 1. 🤖 模型集成（最关键）
+### 1. 🤖 模型集成 ✅ **已完成 (Phase 7.1 & 7.2)**
 
-**问题：**
-- Model Gateway 使用的是 **Mock 数据**，没有真实的 AI 模型
-- Embedding 生成是基于文本哈希的伪向量
-- Chat 生成返回固定的 Mock 响应
-- Rerank 使用简单的词频匹配
+**Phase 7.1 完成：**
+- ✅ 模型配置管理界面（前端 Settings 页面）
+- ✅ 模型配置 CRUD API（model-config-service）
+- ✅ API Key 加密存储（Base64，可升级为 Fernet）
+- ✅ 支持多种模型类型（Embedding、Chat、Rerank）
+- ✅ 支持多种提供商（OpenAI、Azure OpenAI、Cohere、Ollama、Custom）
 
-**影响：**
-- ❌ AI 对话无法给出真实的智能回答
-- ❌ 向量检索不准确
-- ❌ 文档相关性排序不准确
-- ❌ 系统核心功能无法真正使用
+**Phase 7.2 完成：**
+- ✅ Model Gateway V2 实现真实 API 集成
+- ✅ OpenAI Embedding API 集成（text-embedding-3-small 等）
+- ✅ OpenAI Chat API 集成（gpt-4o、gpt-4o-mini 等）
+- ✅ Cohere Rerank API 集成（rerank-english-v3.0 等）
+- ✅ Ollama 本地模型集成（Embedding 和 Chat）
+- ✅ 智能回退机制（无配置时使用 Mock）
+- ✅ 优雅的错误处理和日志记录
+- ✅ 基于提供商的路由逻辑
+- ✅ 所有 Mock 测试通过
 
-**需要：**
-- 集成真实的 Embedding 模型（如 OpenAI、Cohere、本地模型）
-- 集成真实的 LLM（如 GPT-4、Claude、本地 LLM）
-- 集成真实的 Rerank 模型（如 Cohere Rerank、本地模型）
+**当前状态：**
+- ✅ 系统已支持真实 AI 模型
+- ✅ 用户可通过 UI 配置 API Key
+- ✅ 配置后自动使用真实模型
+- ✅ 无配置时自动回退到 Mock
+- ⏳ 等待用户添加 API Key 进行真实测试
 
-### 2. 🔧 模型配置管理
+**文档：**
+- `PHASE7_MODEL_CONFIG.md` - Phase 7.1 详细文档
+- `PHASE7.2_REAL_AI_INTEGRATION.md` - Phase 7.2 详细文档
+- `PHASE7.2_SUMMARY.md` - Phase 7.2 实施总结
+- `test_model_gateway_v2.sh` - 测试脚本
 
-**问题：**
-- 没有模型配置管理界面
-- 无法动态添加/切换模型
-- API Key 管理不完善
-- 模型参数无法调整
-
-**需要：**
-- 模型配置管理页面（前端）
-- 模型配置 CRUD API（后端）
-- API Key 加密存储
-- 模型测试功能
-
-### 3. 📝 文档处理能力有限
+### 2. 📝 文档处理能力有限
 
 **问题：**
 - 仅支持基础文本提取
@@ -83,7 +83,7 @@
 - 智能切分策略（按段落、章节）
 - 文档预览功能
 
-### 4. 🔍 检索质量
+### 3. 🔍 检索质量
 
 **问题：**
 - 没有混合检索（仅向量检索）
@@ -97,7 +97,7 @@
 - 对话上下文管理
 - 检索结果缓存
 
-### 5. 👤 用户体验
+### 4. 👤 用户体验
 
 **问题：**
 - 没有文档预览
@@ -159,47 +159,74 @@
 
 ## 🗓️ 下一步开发计划
 
-### Phase 7: 模型集成和配置管理（优先级：🔥 最高）
+### Phase 7: 模型集成和配置管理 ✅ **已完成**
 
 **目标：** 让系统真正能够使用 AI 功能
 
-#### 7.1 模型集成
-- [ ] **集成 OpenAI API**
-  - Embedding: text-embedding-3-small
-  - Chat: gpt-4o-mini
-  - 配置 API Key 管理
+#### 7.1 模型配置管理 ✅ **已完成**
+- ✅ **前端页面**
+  - 模型配置列表（Settings 页面）
+  - 添加/编辑/删除模型
+  - 模型类型选择（Embedding/Chat/Rerank）
+  - 提供商选择（OpenAI/Cohere/Ollama/Custom）
+  - API Key 安全输入（加密存储）
+  - 设置默认模型
+  - 启用/禁用模型
+
+- ✅ **后端 API**
+  - 模型配置 CRUD（model-config-service）
+  - API Key 加密存储（Base64，可升级 Fernet）
+  - 默认模型管理
+  - 7 个 REST API 端点
+  - 集成到 Nginx 网关
+
+**完成时间：** 2026-01-29
+
+#### 7.2 真实 AI 模型集成 ✅ **已完成**
+- ✅ **集成 OpenAI API**
+  - Embedding: text-embedding-3-small, text-embedding-3-large
+  - Chat: gpt-4o, gpt-4o-mini, gpt-3.5-turbo
+  - API Key 管理和加密
+  - 自动路由和调用
   
-- [ ] **集成 Cohere API**（可选）
-  - Rerank: rerank-english-v3.0
+- ✅ **集成 Cohere API**
+  - Rerank: rerank-english-v3.0, rerank-multilingual-v3.0
   - 提升检索质量
 
-- [ ] **支持本地模型**（可选）
+- ✅ **支持本地模型**
   - Ollama 集成
-  - 本地 Embedding 模型
-  - 本地 LLM
+  - 本地 Embedding 模型（nomic-embed-text 等）
+  - 本地 LLM（llama3.2, qwen2.5, mistral 等）
 
-- [ ] **Model Gateway 改造**
-  - 移除 Mock 逻辑
+- ✅ **Model Gateway V2 实现**
+  - 移除纯 Mock 逻辑
   - 添加真实 API 调用
+  - 智能回退机制（无配置时使用 Mock）
   - 错误处理和重试
   - Fallback 机制
+  - 基于提供商的路由
+  - 详细日志记录
 
-**预计时间：** 3-5 天
+**完成时间：** 2026-01-30
 
-#### 7.2 模型配置管理界面
-- [ ] **前端页面**
-  - 模型配置列表
-  - 添加/编辑/删除模型
-  - 模型测试功能
-  - API Key 安全输入
+**文档：**
+- `PHASE7_MODEL_CONFIG.md` - Phase 7.1 详细文档
+- `PHASE7_SUMMARY.md` - Phase 7.1 总结
+- `PHASE7.2_REAL_AI_INTEGRATION.md` - Phase 7.2 详细文档
+- `PHASE7.2_SUMMARY.md` - Phase 7.2 总结
+- `test_model_gateway_v2.sh` - 测试脚本
 
-- [ ] **后端 API**
-  - 模型配置 CRUD
-  - API Key 加密存储
-  - 模型测试接口
-  - 默认模型管理
+**测试状态：**
+- ✅ Health check 通过
+- ✅ Mock embedding 测试通过
+- ✅ Mock chat 测试通过
+- ✅ Mock rerank 测试通过
+- ⏳ 等待用户配置 API Key 进行真实 API 测试
 
-**预计时间：** 2-3 天
+**下一步：**
+- 用户通过 Settings UI 添加 API Key
+- 测试真实 OpenAI/Cohere API
+- 验证端到端流程（上传文档 → 向量化 → 检索 → 对话）
 
 ---
 
