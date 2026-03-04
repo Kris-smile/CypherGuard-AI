@@ -48,7 +48,6 @@ logs/
 # Temporary files
 *.tmp
 nul
-调研.md
 
 # Claude settings (local only)
 .claude/settings.local.json
