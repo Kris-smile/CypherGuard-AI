@@ -10,3 +10,4 @@ redis==5.0.1
 sqlalchemy==2.0.25
 email-validator==2.1.0
 argon2-cffi==23.1.0
+cryptography>=42.0.0

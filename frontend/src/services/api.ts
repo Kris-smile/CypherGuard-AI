@@ -25,12 +25,28 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// 响应拦截器 - 处理错误
+// 响应拦截器 - 401时尝试 refresh token
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
-    if (error.response?.status === 401) {
+  async (error: AxiosError) => {
+    const originalRequest = error.config as any;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (refreshToken) {
+        try {
+          const resp = await axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
+          const { access_token, refresh_token: newRefresh } = resp.data;
+          localStorage.setItem('access_token', access_token);
+          if (newRefresh) localStorage.setItem('refresh_token', newRefresh);
+          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          return apiClient(originalRequest);
+        } catch {
+          // refresh 也失败，跳转登录
+        }
+      }
       localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
@@ -49,6 +65,7 @@ export interface User {
 }
 
 export interface LoginRequest {
+  // Support both email and username - the server will check both
   email: string;
   password: string;
 }
@@ -61,6 +78,7 @@ export interface RegisterRequest {
 
 export interface AuthResponse {
   access_token: string;
+  refresh_token?: string;
   token_type: string;
   user: User;
 }
@@ -75,8 +93,52 @@ export interface Document {
   status: 'pending' | 'processing' | 'ready' | 'failed' | 'deleted';
   tags?: string[];
   version: number;
+  summary?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface FAQEntry {
+  id: string;
+  owner_user_id: string;
+  question: string;
+  answer: string;
+  similar_questions?: string[];
+  tags?: string[];
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface ChunkInfo {
+  id: string;
+  document_id: string;
+  chunk_index: number;
+  text?: string;
+  text_hash?: string;
+  page_start?: number;
+  page_end?: number;
+  section_title?: string;
+  chunk_type: string;
+  is_enabled: boolean;
+  created_at: string;
+}
+
+export interface EntityInfo {
+  id: string;
+  document_id?: string;
+  chunk_id?: string;
+  entity_type: string;
+  value: string;
+  count: number;
+  created_at: string;
 }
 
 export interface IngestionTask {
@@ -101,6 +163,9 @@ export interface Mode {
   min_score: number;
   require_citations: boolean;
   no_evidence_behavior: 'refuse' | 'answer_with_warning';
+  retrieval_strategy: 'vector' | 'bm25' | 'hybrid';
+  bm25_weight: number;
+  enable_web_search: boolean;
 }
 
 export interface Conversation {
@@ -130,6 +195,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   citations_json?: Citation[];
+  agent_steps?: Array<{ round: number; llm_output: string; action?: string; observation?: string }>;
   created_at: string;
 }
 
@@ -196,6 +262,19 @@ export const authAPI = {
     const response = await apiClient.get<User>('/auth/me');
     return response.data;
   },
+
+  updateProfile: async (data: { username?: string; email?: string }): Promise<User> => {
+    const response = await apiClient.put<User>('/auth/profile', data);
+    return response.data;
+  },
+
+  changePassword: async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    return response.data;
+  },
 };
 
 // ============== KB API ==============
@@ -208,17 +287,18 @@ export const kbAPI = {
     if (tags) formData.append('tags', tags);
 
     const response = await apiClient.post<Document>('/kb/documents/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
   },
 
+  importUrl: async (url: string, title?: string, tags?: string[]): Promise<Document> => {
+    const response = await apiClient.post<Document>('/kb/documents/import-url', { url, title, tags });
+    return response.data;
+  },
+
   listDocuments: async (skip = 0, limit = 100): Promise<Document[]> => {
-    const response = await apiClient.get<Document[]>('/kb/documents', {
-      params: { skip, limit },
-    });
+    const response = await apiClient.get<Document[]>('/kb/documents', { params: { skip, limit } });
     return response.data;
   },
 
@@ -231,10 +311,81 @@ export const kbAPI = {
     await apiClient.delete(`/kb/documents/${id}`);
   },
 
+  reindexDocument: async (id: string): Promise<Document> => {
+    const response = await apiClient.post<Document>(`/kb/documents/${id}/reindex`);
+    return response.data;
+  },
+
   listTasks: async (documentId?: string): Promise<IngestionTask[]> => {
     const response = await apiClient.get<IngestionTask[]>('/kb/tasks', {
       params: documentId ? { document_id: documentId } : {},
     });
+    return response.data;
+  },
+
+  // Chunks
+  listChunks: async (documentId: string): Promise<ChunkInfo[]> => {
+    const response = await apiClient.get<ChunkInfo[]>(`/kb/documents/${documentId}/chunks`);
+    return response.data;
+  },
+
+  updateChunk: async (chunkId: string, data: { text?: string; is_enabled?: boolean }): Promise<ChunkInfo> => {
+    const response = await apiClient.put<ChunkInfo>(`/kb/chunks/${chunkId}`, data);
+    return response.data;
+  },
+
+  toggleChunk: async (chunkId: string): Promise<ChunkInfo> => {
+    const response = await apiClient.patch<ChunkInfo>(`/kb/chunks/${chunkId}/toggle`);
+    return response.data;
+  },
+
+  // FAQ
+  listFAQ: async (): Promise<FAQEntry[]> => {
+    const response = await apiClient.get<FAQEntry[]>('/kb/faq');
+    return response.data;
+  },
+
+  createFAQ: async (data: { question: string; answer: string; similar_questions?: string[]; tags?: string[] }): Promise<FAQEntry> => {
+    const response = await apiClient.post<FAQEntry>('/kb/faq', data);
+    return response.data;
+  },
+
+  updateFAQ: async (id: string, data: Partial<{ question: string; answer: string; similar_questions: string[]; tags: string[]; is_enabled: boolean }>): Promise<FAQEntry> => {
+    const response = await apiClient.put<FAQEntry>(`/kb/faq/${id}`, data);
+    return response.data;
+  },
+
+  deleteFAQ: async (id: string): Promise<void> => {
+    await apiClient.delete(`/kb/faq/${id}`);
+  },
+
+  importFAQCSV: async (file: File): Promise<{ imported: number; message: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post('/kb/faq/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  // Tags
+  listTags: async (): Promise<Tag[]> => {
+    const response = await apiClient.get<Tag[]>('/kb/tags');
+    return response.data;
+  },
+
+  createTag: async (name: string, color?: string): Promise<Tag> => {
+    const response = await apiClient.post<Tag>('/kb/tags', { name, color });
+    return response.data;
+  },
+
+  deleteTag: async (id: string): Promise<void> => {
+    await apiClient.delete(`/kb/tags/${id}`);
+  },
+
+  // Entities
+  listEntities: async (documentId: string): Promise<EntityInfo[]> => {
+    const response = await apiClient.get<EntityInfo[]>(`/kb/documents/${documentId}/entities`);
     return response.data;
   },
 };
@@ -255,6 +406,10 @@ export const chatAPI = {
     return response.data;
   },
 
+  deleteConversation: async (conversationId: string): Promise<void> => {
+    await apiClient.delete(`/chat/conversations/${conversationId}`);
+  },
+
   listConversations: async (skip = 0, limit = 50): Promise<Conversation[]> => {
     const response = await apiClient.get<Conversation[]>('/chat/conversations', {
       params: { skip, limit },
@@ -267,10 +422,65 @@ export const chatAPI = {
     return response.data;
   },
 
-  sendMessage: async (conversationId: string, content: string): Promise<ChatResponse> => {
+  sendMessage: async (conversationId: string, content: string, images?: string[]): Promise<ChatResponse> => {
     const response = await apiClient.post<ChatResponse>(
       `/chat/conversations/${conversationId}/messages`,
-      { content }
+      { content, images: images?.length ? images : undefined }
+    );
+    return response.data;
+  },
+
+  sendMessageStream: async (
+    conversationId: string,
+    content: string,
+    onToken: (token: string) => void,
+    onStatus?: (msg: string) => void,
+    onDone?: (citations: Citation[]) => void,
+    images?: string[],
+  ): Promise<void> => {
+    const token = localStorage.getItem('access_token');
+    const resp = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}/messages/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ content, images: images?.length ? images : undefined }),
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const reader = resp.body?.getReader();
+    if (!reader) throw new Error('No readable stream');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const dataStr = line.slice(6).trim();
+        if (dataStr === '[DONE]') { onDone?.([]); return; }
+        try {
+          const data = JSON.parse(dataStr);
+          if (data.type === 'token') onToken(data.content || '');
+          else if (data.type === 'status') onStatus?.(data.message || '');
+          else if (data.type === 'done') onDone?.(data.citations || []);
+        } catch { /* skip parse errors */ }
+      }
+    }
+  },
+
+  sendMessageAgent: async (conversationId: string, content: string, images?: string[]): Promise<ChatResponse> => {
+    const response = await apiClient.post<ChatResponse>(
+      `/chat/conversations/${conversationId}/messages/agent`,
+      { content, images: images?.length ? images : undefined }
     );
     return response.data;
   },

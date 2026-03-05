@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberMind AI - 智能网络安全知识系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #020617;
+            overflow-x: hidden;
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Glassmorphism Utilities */
+        .glass {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-strong {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Animated Background Grid */
+        .cyber-grid {
+            background-image: 
+                linear-gradient(rgba(6, 182, 212, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(6, 182, 212, 0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+            mask-image: radial-gradient(circle at center, black 40%, transparent 80%);
+        }
+
+        /* Floating Orbs */
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+            animation: float 20s infinite ease-in-out;
+        }
+        .orb-1 { background: #06b6d4; width: 400px; height: 400px; top: -10%; left: -10%; animation-delay: 0s; }
+        .orb-2 { background: #10b981; width: 300px; height: 300px; bottom: -10%; right: -10%; animation-delay: -5s; }
+        .orb-3 { background: #3b82f6; width: 250px; height: 250px; top: 40%; left: 60%; animation-delay: -10s; }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -30px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+        }
+
+        /* Input Autofill Fix for Dark Mode */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus {
+            -webkit-box-shadow: 0 0 0px 1000px #0f172a inset;
+            -webkit-text-fill-color: white;
+        }
+
+        /* Scanline Effect */
+        .scanline::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(6, 182, 212, 0.5);
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.8);
+            animation: scan 3s linear infinite;
+            opacity: 0.5;
+        }
+        @keyframes scan {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+
+        /* Typing Cursor */
+        .typing-cursor::after {
+            content: '|';
+            animation: blink 1s step-end infinite;
+            color: #06b6d4;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+<base target="_blank">
+</head>
+<body class="min-h-screen flex items-center justify-center relative">
+    <!-- Animated Background -->
+    <div class="fixed inset-0 cyber-grid z-0"></div>
+    <div class="orb orb-1 z-0"></div>
+    <div class="orb orb-2 z-0"></div>
+    <div class="orb orb-3 z-0"></div>
+
+    <!-- Main Container -->
+    <div class="relative z-10 w-full max-w-6xl mx-4 grid grid-cols-1 lg:grid-cols-2 gap-8 items-center" x-data="loginSystem()">
+
+        <!-- Left Side: Branding & Info -->
+        <div class="hidden lg:flex flex-col space-y-8 p-8">
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
+                    <i data-lucide="shield-check" class="w-7 h-7 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-white tracking-tight">CyberMind AI</h1>
+                    <p class="text-slate-400 text-sm">智能网络安全知识体系</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <h2 class="text-4xl font-bold text-white leading-tight">
+                    AI驱动的<br>
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 typing-cursor" x-text="displayText" x-init="typeWriter()"></span>
+                </h2>
+                <p class="text-slate-400 text-lg leading-relaxed max-w-md">
+                    融合深度学习与威胁情报，构建企业级网络安全知识图谱。实时分析、智能推理、协同防御。
+                </p>
+            </div>
+
+            <!-- Feature Bento Grid -->
+            <div class="grid grid-cols-2 gap-4 mt-8">
+                <div class="glass rounded-2xl p-4 hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
+                    <div class="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <i data-lucide="brain-circuit" class="w-5 h-5 text-cyan-400"></i>
+                    </div>
+                    <h3 class="text-white font-semibold mb-1">AI 知识推理</h3>
+                    <p class="text-slate-400 text-sm">基于大模型的智能关联分析</p>
+                </div>
+                <div class="glass rounded-2xl p-4 hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
+                    <div class="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <i data-lucide="activity" class="w-5 h-5 text-emerald-400"></i>
+                    </div>
+                    <h3 class="text-white font-semibold mb-1">实时威胁监测</h3>
+                    <p class="text-slate-400 text-sm">毫秒级异常行为检测</p>
+                </div>
+                <div class="glass rounded-2xl p-4 hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
+                    <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <i data-lucide="network" class="w-5 h-5 text-blue-400"></i>
+                    </div>
+                    <h3 class="text-white font-semibold mb-1">知识图谱构建</h3>
+                    <p class="text-slate-400 text-sm">自动化APT攻击链路溯源</p>
+                </div>
+                <div class="glass rounded-2xl p-4 hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
+                    <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <i data-lucide="shield" class="w-5 h-5 text-purple-400"></i>
+                    </div>
+                    <h3 class="text-white font-semibold mb-1">智能防御策略</h3>
+                    <p class="text-slate-400 text-sm">动态生成防护规则</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Login Form -->
+        <div class="glass-strong rounded-3xl p-8 md:p-10 shadow-2xl relative overflow-hidden">
+            <div class="scanline absolute inset-0 pointer-events-none"></div>
+
+            <div class="relative z-10">
+                <div class="text-center mb-8">
+                    <h3 class="text-2xl font-bold text-white mb-2">欢迎回来</h3>
+                    <p class="text-slate-400">登录您的 CyberMind 账户</p>
+                </div>
+
+                <!-- Login Form -->
+                <form @submit.prevent="handleLogin" class="space-y-5">
+                    <!-- Email Input -->
+                    <div class="space-y-2">
+                        <label class="text-sm font-medium text-slate-300 ml-1">工作邮箱</label>
+                        <div class="relative group">
+                            <input 
+                                type="email" 
+                                x-model="email"
+                                class="w-full px-5 py-4 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200 mono"
+                                placeholder="security@company.com"
+                                required
+                            >
+                            <i data-lucide="mail" class="w-5 h-5 text-slate-500 absolute right-4 top-1/2 -translate-y-1/2 group-hover:text-cyan-400 transition-colors"></i>
+                        </div>
+                    </div>
+
+                    <!-- Password Input -->
+                    <div class="space-y-2">
+                        <label class="text-sm font-medium text-slate-300 ml-1">安全密钥</label>
+                        <div class="relative group">
+                            <input 
+                                :type="showPassword ? 'text' : 'password'"
+                                x-model="password"
+                                class="w-full px-5 py-4 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200 mono"
+                                placeholder="••••••••••••"
+                                required
+                            >
+                            <button 
+                                type="button"
+                                @click="showPassword = !showPassword"
+                                class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition-colors focus:outline-none"
+                            >
+                                <i :data-lucide="showPassword ? 'eye-off' : 'eye'" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Security Options -->
+                    <div class="flex items-center justify-between text-sm">
+                        <label class="flex items-center space-x-2 cursor-pointer group">
+                            <input type="checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500/20 focus:ring-offset-0">
+                            <span class="text-slate-400 group-hover:text-slate-300 transition-colors">记住设备</span>
+                        </label>
+                        <a href="#" class="text-cyan-400 hover:text-cyan-300 transition-colors font-medium">忘记密钥?</a>
+                    </div>
+
+                    <!-- AI Security Indicator -->
+                    <div class="flex items-center space-x-2 py-2 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                        <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                        <span class="text-emerald-400 text-xs font-medium mono">AI 安全防护已激活</span>
+                        <i data-lucide="lock" class="w-3 h-3 text-emerald-400 ml-auto"></i>
+                    </div>
+
+                    <!-- Login Button -->
+                    <button 
+                        type="submit"
+                        class="w-full py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-500/25 transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center space-x-2 group"
+                        :disabled="loading"
+                        :class="{ 'opacity-70 cursor-not-allowed': loading }"
+                    >
+                        <span x-show="!loading">进入系统</span>
+                        <span x-show="loading" class="flex items-center space-x-2">
+                            <i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>
+                            <span>验证身份中...</span>
+                        </span>
+                        <i x-show="!loading" data-lucide="arrow-right" class="w-5 h-5 group-hover:translate-x-1 transition-transform"></i>
+                    </button>
+                </form>
+
+                <!-- Divider -->
+                <div class="relative my-8">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-slate-700"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-4 bg-slate-900/50 text-slate-500">或者使用 SSO 登录</span>
+                    </div>
+                </div>
+
+                <!-- SSO Options -->
+                <div class="grid grid-cols-3 gap-3">
+                    <button class="glass py-3 rounded-xl hover:bg-slate-800/50 transition-all duration-200 flex items-center justify-center group">
+                        <svg class="w-5 h-5 text-white opacity-70 group-hover:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                        </svg>
+                    </button>
+                    <button class="glass py-3 rounded-xl hover:bg-slate-800/50 transition-all duration-200 flex items-center justify-center group">
+                        <svg class="w-5 h-5 text-white opacity-70 group-hover:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                        </svg>
+                    </button>
+                    <button class="glass py-3 rounded-xl hover:bg-slate-800/50 transition-all duration-200 flex items-center justify-center group">
+                        <svg class="w-5 h-5 text-white opacity-70 group-hover:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19.07 4.93L17.66 6.34C18.5 7.18 19 8.27 19 9.5C19 12 17 14 14.5 14H11V18H14.5C19.19 18 23 14.19 23 9.5C23 7.68 22.23 6.03 21 4.93V4.93L19.07 4.93ZM12.5 2.5C12.5 2.5 12.5 2.5 12.5 2.5C7.81 2.5 4 6.31 4 11C4 12.73 4.5 14.34 5.34 15.66L3.93 17.07C2.77 15.22 2 13.19 2 11C2 5.48 6.48 1 12 1C12.17 1 12.33 1.01 12.5 1.02V2.5ZM14.5 9H11V11H14.5C15.33 11 16 10.33 16 9.5C16 8.67 15.33 8 14.5 8V9Z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        function loginSystem() {
+            return {
+                email: '',
+                password: '',
+                showPassword: false,
+                loading: false,
+                displayText: '',
+                fullText: '网络安全专家',
+                typeWriter() {
+                    let i = 0;
+                    setInterval(() => {
+                        if (i < this.fullText.length) {
+                            this.displayText += this.fullText.charAt(i);
+                            i++;
+                        } else {
+                            setTimeout(() => {
+                                this.displayText = '';
+                                i = 0;
+                            }, 3000);
+                        }
+                    }, 200);
+                },
+                handleLogin() {
+                    this.loading = true;
+                    setTimeout(() => {
+                        window.location.href = '#dashboard';
+                    }, 2000);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

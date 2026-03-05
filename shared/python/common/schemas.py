@@ -18,6 +18,16 @@ class UserLogin(BaseModel):
     password: str
 
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(None, min_length=3, max_length=100)
+    email: Optional[EmailStr] = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=6)
+
+
 class UserResponse(BaseModel):
     id: UUID
     email: str
@@ -31,6 +41,7 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     user: UserResponse
 
@@ -54,6 +65,7 @@ class DocumentResponse(BaseModel):
     status: str
     tags: Optional[List[str]]
     version: int
+    summary: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -78,19 +90,58 @@ class TaskResponse(BaseModel):
 
 
 # Mode schemas
+class ModeCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    system_prompt: str = Field(..., min_length=1)
+    top_k: int = Field(default=20, ge=1, le=100)
+    top_n: int = Field(default=6, ge=1, le=50)
+    min_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    require_citations: bool = True
+    no_evidence_behavior: str = Field(default="refuse", pattern="^(refuse|answer_with_warning)$")
+    retrieval_strategy: str = Field(default="hybrid", pattern="^(vector|bm25|hybrid)$")
+    bm25_weight: float = Field(default=0.3, ge=0.0, le=1.0)
+    enable_web_search: bool = False
+
+
+class ModeUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    system_prompt: Optional[str] = Field(None, min_length=1)
+    top_k: Optional[int] = Field(None, ge=1, le=100)
+    top_n: Optional[int] = Field(None, ge=1, le=50)
+    min_score: Optional[float] = Field(None, ge=0.0, le=1.0)
+    require_citations: Optional[bool] = None
+    no_evidence_behavior: Optional[str] = Field(None, pattern="^(refuse|answer_with_warning)$")
+    retrieval_strategy: Optional[str] = Field(None, pattern="^(vector|bm25|hybrid)$")
+    bm25_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
+    enable_web_search: Optional[bool] = None
+
+
 class ModeResponse(BaseModel):
     id: UUID
     name: str
     description: Optional[str]
+    system_prompt: Optional[str] = None
     top_k: int
     top_n: int
     min_score: float
     require_citations: bool
     no_evidence_behavior: str
+    retrieval_strategy: str = "hybrid"
+    bm25_weight: float = 0.3
+    enable_web_search: bool = False
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+# URL Import schema
+class URLImportRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+    title: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 # Conversation schemas
@@ -127,6 +178,7 @@ class Citation(BaseModel):
 # Message schemas
 class MessageCreate(BaseModel):
     content: str
+    images: Optional[List[str]] = None
 
 
 class MessageResponse(BaseModel):
@@ -152,7 +204,7 @@ class ChatResponse(BaseModel):
 # Model Config schemas
 class ModelConfigCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    model_type: str = Field(..., pattern="^(embedding|chat|rerank)$")
+    model_type: str = Field(..., pattern="^(embedding|chat|vision|document|rerank)$")
     provider: str = Field(..., min_length=1, max_length=100)
     base_url: Optional[str] = None
     model_name: str = Field(..., min_length=1, max_length=255)
@@ -165,7 +217,7 @@ class ModelConfigCreate(BaseModel):
 
 class ModelConfigUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    model_type: Optional[str] = Field(None, pattern="^(embedding|chat|rerank)$")
+    model_type: Optional[str] = Field(None, pattern="^(embedding|chat|vision|document|rerank)$")
     provider: Optional[str] = Field(None, min_length=1, max_length=100)
     base_url: Optional[str] = None
     model_name: Optional[str] = Field(None, min_length=1, max_length=255)
@@ -190,6 +242,90 @@ class ModelConfigResponse(BaseModel):
     enabled: bool
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# FAQ schemas
+class FAQCreate(BaseModel):
+    question: str = Field(..., min_length=1)
+    answer: str = Field(..., min_length=1)
+    similar_questions: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+
+
+class FAQUpdate(BaseModel):
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    similar_questions: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+    is_enabled: Optional[bool] = None
+
+
+class FAQResponse(BaseModel):
+    id: UUID
+    owner_user_id: Optional[UUID]
+    question: str
+    answer: str
+    similar_questions: Optional[List[str]]
+    tags: Optional[List[str]]
+    is_enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Tag schemas
+class TagCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    color: str = Field(default="#3B82F6", pattern="^#[0-9A-Fa-f]{6}$")
+
+
+class TagResponse(BaseModel):
+    id: UUID
+    name: str
+    color: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Chunk schemas
+class ChunkResponse(BaseModel):
+    id: UUID
+    document_id: UUID
+    chunk_index: int
+    text: Optional[str]
+    text_hash: Optional[str]
+    page_start: Optional[int]
+    page_end: Optional[int]
+    section_title: Optional[str]
+    chunk_type: str = "text"
+    is_enabled: bool = True
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChunkUpdate(BaseModel):
+    text: Optional[str] = None
+    is_enabled: Optional[bool] = None
+
+
+# Entity schemas
+class EntityResponse(BaseModel):
+    id: UUID
+    document_id: Optional[UUID]
+    chunk_id: Optional[UUID]
+    entity_type: str
+    value: str
+    count: int
+    created_at: datetime
 
     class Config:
         from_attributes = True

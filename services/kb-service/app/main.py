@@ -1,6 +1,6 @@
 """KB Service - Knowledge base document management"""
 
-from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, status, Form
+from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, status, Form, Header
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -11,27 +11,36 @@ from typing import List, Optional
 from uuid import UUID
 import sys
 import os
+import ipaddress
+import logging
+from urllib.parse import urlparse
 from datetime import datetime
 
-# Add common module to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from common.config import Settings
 from common.database import Database
-from common.models import User, Document, IngestionTask
-from common.schemas import DocumentCreate, DocumentResponse, TaskResponse
-from common.exceptions import NotFoundError, AuthenticationError
+from common.models import User, Document, IngestionTask, Chunk, FAQEntry, Tag, Entity
+from common.schemas import (
+    DocumentResponse, TaskResponse, URLImportRequest,
+    FAQCreate, FAQUpdate, FAQResponse,
+    TagCreate, TagResponse,
+    ChunkResponse, ChunkUpdate,
+    EntityResponse,
+)
+from common.auth import decode_token_payload, TokenPayload
+from common.exceptions import NotFoundError, AuthenticationError, AuthorizationError, ValidationError
 
-# Initialize app
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title="KB Service",
-    version="1.0.0",
+    version="2.0.0",
     docs_url="/kb/docs",
     openapi_url="/kb/openapi.json",
     redoc_url="/kb/redoc"
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,7 +52,6 @@ app.add_middleware(
 settings = Settings()
 db = Database(settings.postgres_url)
 
-# Initialize MinIO client
 minio_client = Minio(
     settings.minio_endpoint,
     access_key=settings.minio_access_key,
@@ -51,42 +59,73 @@ minio_client = Minio(
     secure=settings.minio_secure
 )
 
-# Initialize Celery client
-celery_app = Celery(
-    "kb-service",
-    broker=settings.redis_url,
-    backend=settings.redis_url
-)
+celery_app = Celery("kb-service", broker=settings.redis_url, backend=settings.redis_url)
 
 
-# Dependency to get database session
 def get_db():
     return next(db.get_session())
 
 
-# Simple auth dependency (for Phase 2, just check user_id header)
-async def get_current_user_id(user_id: str = None) -> str:
-    """Get current user ID from header (simplified for Phase 2)"""
-    if not user_id:
-        # For testing, use a default user ID
-        return "00000000-0000-0000-0000-000000000001"
-    return user_id
+async def get_current_user(authorization: Optional[str] = Header(None)) -> TokenPayload:
+    """Extract and validate JWT from Authorization header."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise AuthenticationError("缺少认证令牌")
+    token = authorization[7:]
+    payload = decode_token_payload(token, settings.jwt_secret, settings.jwt_algorithm)
+    if payload is None:
+        raise AuthenticationError("令牌无效或已过期")
+    return payload
+
+
+async def require_admin(user: TokenPayload = Depends(get_current_user)) -> TokenPayload:
+    """Require admin role."""
+    if user.role != "admin":
+        raise AuthorizationError("需要管理员权限")
+    return user
+
+
+# --------------- SSRF Protection ---------------
+
+def validate_url_for_import(url: str) -> str:
+    """Validate URL against SSRF attacks."""
+    parsed = urlparse(url)
+
+    allowed_schemes = [s.strip() for s in settings.url_fetch_allowed_schemes.split(",")]
+    if parsed.scheme not in allowed_schemes:
+        raise ValidationError(f"不允许的协议: {parsed.scheme}，仅允许 {', '.join(allowed_schemes)}")
+
+    if not parsed.hostname:
+        raise ValidationError("无效的URL: 缺少主机名")
+
+    blocked_cidrs = [s.strip() for s in settings.ssrf_blocked_cidrs.split(",") if s.strip()]
+
+    import socket
+    try:
+        resolved_ips = socket.getaddrinfo(parsed.hostname, None)
+    except socket.gaierror:
+        raise ValidationError(f"无法解析域名: {parsed.hostname}")
+
+    for _, _, _, _, sockaddr in resolved_ips:
+        ip = ipaddress.ip_address(sockaddr[0])
+        for cidr in blocked_cidrs:
+            if ip in ipaddress.ip_network(cidr, strict=False):
+                raise ValidationError(f"禁止访问内网地址: {parsed.hostname}")
+
+    return url
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize MinIO bucket on startup"""
     try:
         if not minio_client.bucket_exists(settings.minio_bucket):
             minio_client.make_bucket(settings.minio_bucket)
-            print(f"Created MinIO bucket: {settings.minio_bucket}")
+            logger.info(f"Created MinIO bucket: {settings.minio_bucket}")
     except S3Error as e:
-        print(f"MinIO error: {e}")
+        logger.error(f"MinIO error: {e}")
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
 async def health_check():
-    """Health check endpoint"""
     return "OK"
 
 
@@ -95,23 +134,40 @@ async def upload_document(
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
-    user_id: str = Depends(get_current_user_id),
+    user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db)
 ):
-    """Upload a document file"""
-    # Use filename as title if not provided
+    """Upload a document file."""
+    user_id = user.sub
     doc_title = title or file.filename
-
-    # Parse tags
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
 
-    # Generate object name
+    # Check file size
+    file_content = await file.read()
+    max_bytes = settings.upload_max_mb * 1024 * 1024
+    if len(file_content) > max_bytes:
+        raise ValidationError(f"文件大小超过限制 ({settings.upload_max_mb}MB)")
+
+    # Check file type
+    allowed_types = [
+        "application/pdf", "text/plain", "text/markdown",
+        "text/html", "application/xhtml+xml",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-powerpoint",
+        "application/octet-stream",
+    ]
+    if file.content_type and file.content_type not in allowed_types:
+        raise ValidationError(f"不支持的文件类型: {file.content_type}")
+
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     object_name = f"{user_id}/{timestamp}_{file.filename}"
 
     try:
-        # Upload to MinIO
-        file_content = await file.read()
         from io import BytesIO
         minio_client.put_object(
             settings.minio_bucket,
@@ -121,7 +177,6 @@ async def upload_document(
             content_type=file.content_type or "application/octet-stream"
         )
 
-        # Create document record
         document = Document(
             owner_user_id=user_id,
             title=doc_title,
@@ -131,19 +186,12 @@ async def upload_document(
             status="pending",
             tags=tag_list
         )
-
         session.add(document)
         session.commit()
         session.refresh(document)
 
-        # Trigger processing task
-        task = celery_app.send_task(
-            "worker.process_document",
-            args=[str(document.id)],
-            queue="celery"
-        )
+        task = celery_app.send_task("worker.process_document", args=[str(document.id)], queue="celery")
 
-        # Create ingestion task record
         ingestion_task = IngestionTask(
             document_id=document.id,
             task_type="parse",
@@ -156,89 +204,390 @@ async def upload_document(
         return DocumentResponse.from_orm(document)
 
     except S3Error as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
     except Exception as e:
         session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create document: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"创建文档失败: {str(e)}")
+
+
+@app.post("/kb/documents/import-url", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+async def import_url(
+    request: URLImportRequest,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    """Import a document from a public URL with SSRF protection."""
+    user_id = user.sub
+
+    validated_url = validate_url_for_import(request.url)
+
+    doc_title = request.title or validated_url
+    document = Document(
+        owner_user_id=user_id,
+        title=doc_title,
+        source_type="url",
+        source_uri=validated_url,
+        mime_type="text/html",
+        status="pending",
+        tags=request.tags
+    )
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+
+    task = celery_app.send_task("worker.fetch_and_process_url", args=[str(document.id)], queue="celery")
+
+    ingestion_task = IngestionTask(
+        document_id=document.id,
+        task_type="fetch_url",
+        celery_task_id=task.id,
+        status="pending"
+    )
+    session.add(ingestion_task)
+    session.commit()
+
+    return DocumentResponse.from_orm(document)
 
 
 @app.get("/kb/documents", response_model=List[DocumentResponse])
 async def list_documents(
-    user_id: str = Depends(get_current_user_id),
+    user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100
 ):
-    """List user's documents"""
     documents = session.query(Document).filter(
-        Document.owner_user_id == user_id
-    ).offset(skip).limit(limit).all()
-
+        Document.owner_user_id == user.sub,
+        Document.status != "deleted"
+    ).order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
     return [DocumentResponse.from_orm(doc) for doc in documents]
 
 
 @app.get("/kb/documents/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: UUID,
-    user_id: str = Depends(get_current_user_id),
+    user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db)
 ):
-    """Get document by ID"""
     document = session.query(Document).filter(
         Document.id == document_id,
-        Document.owner_user_id == user_id
+        Document.owner_user_id == user.sub
     ).first()
-
     if not document:
-        raise NotFoundError("Document not found")
-
+        raise NotFoundError("文档未找到")
     return DocumentResponse.from_orm(document)
 
 
 @app.delete("/kb/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
     document_id: UUID,
-    user_id: str = Depends(get_current_user_id),
+    user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db)
 ):
-    """Delete a document"""
     document = session.query(Document).filter(
         Document.id == document_id,
-        Document.owner_user_id == user_id
+        Document.owner_user_id == user.sub
     ).first()
-
     if not document:
-        raise NotFoundError("Document not found")
-
-    # Update status to deleted
+        raise NotFoundError("文档未找到")
     document.status = "deleted"
     session.commit()
-
     return None
+
+
+@app.post("/kb/documents/{document_id}/reindex", response_model=DocumentResponse)
+async def reindex_document(
+    document_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    """Re-index an existing document (re-parse, re-chunk, re-embed)."""
+    document = session.query(Document).filter(
+        Document.id == document_id,
+        Document.owner_user_id == user.sub
+    ).first()
+    if not document:
+        raise NotFoundError("文档未找到")
+
+    if document.status == "deleted":
+        raise ValidationError("已删除的文档不能重新索引")
+
+    # Delete existing chunks
+    session.query(Chunk).filter(Chunk.document_id == document_id).delete()
+
+    document.status = "pending"
+    document.version = (document.version or 1) + 1
+    session.commit()
+    session.refresh(document)
+
+    if document.source_type == "url":
+        task_name = "worker.fetch_and_process_url"
+        task_type = "fetch_url"
+    else:
+        task_name = "worker.process_document"
+        task_type = "parse"
+
+    task = celery_app.send_task(task_name, args=[str(document.id)], queue="celery")
+
+    ingestion_task = IngestionTask(
+        document_id=document.id,
+        task_type=task_type,
+        celery_task_id=task.id,
+        status="pending"
+    )
+    session.add(ingestion_task)
+    session.commit()
+
+    return DocumentResponse.from_orm(document)
 
 
 @app.get("/kb/tasks", response_model=List[TaskResponse])
 async def list_tasks(
     document_id: Optional[UUID] = None,
-    user_id: str = Depends(get_current_user_id),
+    user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db)
 ):
-    """List ingestion tasks"""
     query = session.query(IngestionTask).join(Document).filter(
-        Document.owner_user_id == user_id
+        Document.owner_user_id == user.sub
     )
-
     if document_id:
         query = query.filter(IngestionTask.document_id == document_id)
-
-    tasks = query.all()
+    tasks = query.order_by(IngestionTask.created_at.desc()).all()
     return [TaskResponse.from_orm(task) for task in tasks]
+
+
+# ============== FAQ CRUD ==============
+
+@app.post("/kb/faq", response_model=FAQResponse, status_code=status.HTTP_201_CREATED)
+async def create_faq(
+    data: FAQCreate,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    faq = FAQEntry(
+        owner_user_id=user.sub,
+        question=data.question,
+        answer=data.answer,
+        similar_questions=data.similar_questions or [],
+        tags=data.tags or []
+    )
+    session.add(faq)
+    session.commit()
+    session.refresh(faq)
+
+    celery_app.send_task("worker.index_faq", args=[str(faq.id)], queue="celery")
+    return FAQResponse.from_orm(faq)
+
+
+@app.get("/kb/faq", response_model=List[FAQResponse])
+async def list_faq(
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100
+):
+    entries = session.query(FAQEntry).filter(
+        FAQEntry.owner_user_id == user.sub
+    ).order_by(FAQEntry.created_at.desc()).offset(skip).limit(limit).all()
+    return [FAQResponse.from_orm(e) for e in entries]
+
+
+@app.put("/kb/faq/{faq_id}", response_model=FAQResponse)
+async def update_faq(
+    faq_id: UUID,
+    data: FAQUpdate,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    faq = session.query(FAQEntry).filter(
+        FAQEntry.id == faq_id, FAQEntry.owner_user_id == user.sub
+    ).first()
+    if not faq:
+        raise NotFoundError("FAQ未找到")
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(faq, key, value)
+    session.commit()
+    session.refresh(faq)
+    if "question" in update_data or "similar_questions" in update_data:
+        celery_app.send_task("worker.index_faq", args=[str(faq.id)], queue="celery")
+    return FAQResponse.from_orm(faq)
+
+
+@app.delete("/kb/faq/{faq_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_faq(
+    faq_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    faq = session.query(FAQEntry).filter(
+        FAQEntry.id == faq_id, FAQEntry.owner_user_id == user.sub
+    ).first()
+    if not faq:
+        raise NotFoundError("FAQ未找到")
+    session.delete(faq)
+    session.commit()
+    return None
+
+
+@app.post("/kb/faq/import", status_code=status.HTTP_201_CREATED)
+async def import_faq_csv(
+    file: UploadFile = File(...),
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    """Batch import FAQ from CSV (columns: question, answer, similar_questions, tags)."""
+    import csv
+    import io
+
+    content = await file.read()
+    text = content.decode("utf-8", errors="ignore")
+    reader = csv.DictReader(io.StringIO(text))
+    created = 0
+
+    for row in reader:
+        question = row.get("question", "").strip()
+        answer = row.get("answer", "").strip()
+        if not question or not answer:
+            continue
+        similar = [s.strip() for s in row.get("similar_questions", "").split(";") if s.strip()]
+        tags_list = [t.strip() for t in row.get("tags", "").split(",") if t.strip()]
+        faq = FAQEntry(
+            owner_user_id=user.sub, question=question, answer=answer,
+            similar_questions=similar, tags=tags_list
+        )
+        session.add(faq)
+        created += 1
+
+    session.commit()
+    return {"imported": created, "message": f"成功导入 {created} 条FAQ"}
+
+
+# ============== Tag Management ==============
+
+@app.get("/kb/tags", response_model=List[TagResponse])
+async def list_tags(
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    tags = session.query(Tag).order_by(Tag.name).all()
+    return [TagResponse.from_orm(t) for t in tags]
+
+
+@app.post("/kb/tags", response_model=TagResponse, status_code=status.HTTP_201_CREATED)
+async def create_tag(
+    data: TagCreate,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    existing = session.query(Tag).filter(Tag.name == data.name).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"标签 '{data.name}' 已存在")
+    tag = Tag(name=data.name, color=data.color)
+    session.add(tag)
+    session.commit()
+    session.refresh(tag)
+    return TagResponse.from_orm(tag)
+
+
+@app.delete("/kb/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tag(
+    tag_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    tag = session.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise NotFoundError("标签未找到")
+    session.delete(tag)
+    session.commit()
+    return None
+
+
+# ============== Chunk Management ==============
+
+@app.get("/kb/documents/{document_id}/chunks", response_model=List[ChunkResponse])
+async def list_chunks(
+    document_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    doc = session.query(Document).filter(
+        Document.id == document_id, Document.owner_user_id == user.sub
+    ).first()
+    if not doc:
+        raise NotFoundError("文档未找到")
+    chunks = session.query(Chunk).filter(
+        Chunk.document_id == document_id
+    ).order_by(Chunk.chunk_index).all()
+    return [ChunkResponse.from_orm(c) for c in chunks]
+
+
+@app.put("/kb/chunks/{chunk_id}", response_model=ChunkResponse)
+async def update_chunk(
+    chunk_id: UUID,
+    data: ChunkUpdate,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    chunk = session.query(Chunk).join(Document).filter(
+        Chunk.id == chunk_id, Document.owner_user_id == user.sub
+    ).first()
+    if not chunk:
+        raise NotFoundError("分块未找到")
+
+    update_data = data.model_dump(exclude_unset=True)
+    text_changed = False
+    for key, value in update_data.items():
+        if key == "text" and value != chunk.text:
+            text_changed = True
+        setattr(chunk, key, value)
+
+    if text_changed:
+        import hashlib
+        chunk.text_hash = hashlib.sha256(chunk.text.encode()).hexdigest()[:16]
+
+    session.commit()
+    session.refresh(chunk)
+
+    if text_changed:
+        celery_app.send_task("worker.reindex_chunk", args=[str(chunk_id)], queue="celery")
+
+    return ChunkResponse.from_orm(chunk)
+
+
+@app.patch("/kb/chunks/{chunk_id}/toggle", response_model=ChunkResponse)
+async def toggle_chunk(
+    chunk_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    chunk = session.query(Chunk).join(Document).filter(
+        Chunk.id == chunk_id, Document.owner_user_id == user.sub
+    ).first()
+    if not chunk:
+        raise NotFoundError("分块未找到")
+    chunk.is_enabled = not chunk.is_enabled
+    session.commit()
+    session.refresh(chunk)
+    return ChunkResponse.from_orm(chunk)
+
+
+# ============== Entity Queries ==============
+
+@app.get("/kb/documents/{document_id}/entities", response_model=List[EntityResponse])
+async def list_entities(
+    document_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    doc = session.query(Document).filter(
+        Document.id == document_id, Document.owner_user_id == user.sub
+    ).first()
+    if not doc:
+        raise NotFoundError("文档未找到")
+    entities = session.query(Entity).filter(Entity.document_id == document_id).all()
+    return [EntityResponse.from_orm(e) for e in entities]
 
 
 if __name__ == "__main__":

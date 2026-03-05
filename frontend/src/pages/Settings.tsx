@@ -222,6 +222,8 @@ function ModelCard({
     const labels: Record<string, string> = {
       embedding: '向量模型',
       chat: '对话模型',
+      vision: '视觉模型',
+      document: '文档分析模型',
       rerank: '重排序模型'
     };
     return labels[type] || type;
@@ -326,12 +328,11 @@ function ModelFormModal({
   const [loading, setLoading] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
-  const [connectionTestResult, setConnectionTestResult] = useState<{
-    success: boolean;
-    message: string;
-    models?: Array<{ name: string; size: number; modified_at: string }>;
-  } | null>(null);
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [ollamaConnected, setOllamaConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
+  const [availableModels, setAvailableModels] = useState<Array<{ name: string; size: number; modified_at: string }>>([]);
+  const [allOllamaModels, setAllOllamaModels] = useState<Array<{ name: string; size: number; modified_at: string }>>([]);
+  const [manualInput, setManualInput] = useState(false);
   const [formData, setFormData] = useState({
     name: model?.name || '',
     model_type: model?.model_type || 'chat',
@@ -344,7 +345,6 @@ function ModelFormModal({
     enabled: model?.enabled ?? true,
   });
 
-  // Check if provider is Ollama
   const isOllama = formData.provider === 'ollama';
 
   // Set default base URL for Ollama
@@ -352,64 +352,89 @@ function ModelFormModal({
     if (isOllama && !formData.base_url) {
       setFormData(prev => ({ ...prev, base_url: 'http://host.docker.internal:11434' }));
     }
+    if (!isOllama) {
+      setOllamaConnected(false);
+      setAvailableModels([]);
+      setConnectionError('');
+    }
   }, [isOllama]);
 
-  // Test Ollama connection
-  const handleTestConnection = async () => {
-    if (!formData.base_url) {
-      alert('请先填写 Base URL');
-      return;
+  // Auto-test when switching to Ollama or changing model_type while connected
+  useEffect(() => {
+    if (isOllama && formData.base_url) {
+      doTestConnection(formData.base_url, formData.model_type);
     }
+  }, [formData.model_type]);
 
+  const doTestConnection = async (baseUrl: string, modelType: string) => {
+    if (!baseUrl) return;
     setTestingConnection(true);
-    setConnectionTestResult(null);
+    setConnectionError('');
 
     try {
-      const result = await settingsAPI.testOllamaConnection(
-        formData.base_url,
-        formData.model_type
-      );
-      
-      setConnectionTestResult(result);
-      
-      if (result.success && result.models) {
-        const modelNames = result.models.map(m => m.name);
-        setAvailableModels(modelNames);
-        
-        // Auto-select first model if none selected
-        if (!formData.model_name && modelNames.length > 0) {
-          setFormData(prev => ({ ...prev, model_name: modelNames[0] }));
+      const result = await settingsAPI.testOllamaConnection(baseUrl, modelType);
+      if (result.success) {
+        setOllamaConnected(true);
+        const models = result.models || [];
+        const allModels = result.all_models || models;
+        setAvailableModels(models);
+        setAllOllamaModels(allModels);
+        if (models.length > 0) {
+          setManualInput(false);
+          const currentStillValid = models.some((m: any) => m.name === formData.model_name);
+          if (!currentStillValid) {
+            setFormData(prev => ({
+              ...prev,
+              model_name: models[0].name,
+              name: prev.name || models[0].name,
+            }));
+          }
+        } else {
+          setManualInput(true);
         }
+      } else {
+        setOllamaConnected(false);
+        setConnectionError(result.message);
       }
     } catch (error: any) {
-      setConnectionTestResult({
-        success: false,
-        message: error.response?.data?.detail || '连接测试失败'
-      });
+      setOllamaConnected(false);
+      setConnectionError(error.response?.data?.detail || '连接失败');
     } finally {
       setTestingConnection(false);
     }
   };
 
+  const handleTestConnection = () => {
+    doTestConnection(formData.base_url, formData.model_type);
+  };
+
+  const handleModelSelect = (modelName: string) => {
+    setFormData(prev => ({
+      ...prev,
+      model_name: modelName,
+      name: prev.name || modelName,
+    }));
+  };
+
+  const formatSize = (bytes: number) => {
+    if (!bytes) return '';
+    const gb = bytes / (1024 * 1024 * 1024);
+    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate: Ollama doesn't need API key
     if (!isOllama && !model && !formData.api_key) {
       alert('请填写 API Key');
       return;
     }
 
     setLoading(true);
-
     try {
       const submitData = { ...formData };
-      
-      // For Ollama, set a dummy API key if not provided
       if (isOllama && !submitData.api_key) {
         submitData.api_key = 'ollama-no-key-needed';
       }
-
       if (model) {
         await settingsAPI.updateModel(model.id, submitData);
       } else {
@@ -439,14 +464,11 @@ function ModelFormModal({
         className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-10">
           <h3 className="text-xl font-bold text-slate-900">
             {model ? '编辑模型' : '添加模型'}
           </h3>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-          >
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
             <X className="h-5 w-5 text-slate-500" />
           </button>
         </div>
@@ -456,50 +478,33 @@ function ModelFormModal({
           <div>
             <h4 className="font-semibold text-slate-900 mb-4">基本信息</h4>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  配置名称 *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="例如：GPT-4o Mini"
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    模型类型 *
-                  </label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">模型类型 *</label>
                   <select
                     value={formData.model_type}
-                    onChange={(e) => setFormData({ ...formData, model_type: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange={(e) => setFormData({ ...formData, model_type: e.target.value, model_name: '' })}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option value="embedding">向量模型 (Embedding)</option>
                     <option value="chat">对话模型 (Chat)</option>
+                    <option value="vision">视觉模型 (Vision)</option>
+                    <option value="document">文档分析模型 (Document)</option>
+                    <option value="embedding">向量模型 (Embedding)</option>
                     <option value="rerank">重排序模型 (Rerank)</option>
                   </select>
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    提供商 *
-                  </label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">提供商 *</label>
                   <select
                     value={formData.provider}
                     onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
+                    <option value="ollama">Ollama (本地)</option>
                     <option value="openai">OpenAI</option>
                     <option value="azure_openai">Azure OpenAI</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="cohere">Cohere</option>
-                    <option value="ollama">Ollama</option>
                     <option value="custom">自定义</option>
                   </select>
                 </div>
@@ -507,114 +512,177 @@ function ModelFormModal({
             </div>
           </div>
 
-          {/* API 配置 */}
-          <div>
-            <h4 className="font-semibold text-slate-900 mb-4">API 配置</h4>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Base URL {isOllama && '*'}
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    required={isOllama}
-                    value={formData.base_url}
-                    onChange={(e) => setFormData({ ...formData, base_url: e.target.value })}
-                    className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder={isOllama ? "http://host.docker.internal:11434" : "https://api.openai.com/v1"}
-                  />
-                  {isOllama && (
+          {/* Ollama 连接 */}
+          {isOllama && (
+            <div>
+              <h4 className="font-semibold text-slate-900 mb-4">Ollama 连接</h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">服务地址 *</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      required
+                      value={formData.base_url}
+                      onChange={(e) => {
+                        setFormData({ ...formData, base_url: e.target.value });
+                        setOllamaConnected(false);
+                        setAvailableModels([]);
+                      }}
+                      className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="http://host.docker.internal:11434"
+                    />
                     <button
                       type="button"
                       onClick={handleTestConnection}
                       disabled={testingConnection || !formData.base_url}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                      className={cn(
+                        "px-5 py-2.5 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap font-medium text-sm",
+                        ollamaConnected
+                          ? "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200"
+                          : "bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
                     >
                       {testingConnection ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          测试中...
-                        </>
+                        <><Loader2 className="h-4 w-4 animate-spin" />检测中...</>
+                      ) : ollamaConnected ? (
+                        <><Check className="h-4 w-4" />已连接</>
                       ) : (
-                        <>
-                          <Check className="h-4 w-4" />
-                          测试连接
-                        </>
+                        <><Globe className="h-4 w-4" />检测连接</>
                       )}
                     </button>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  {isOllama ? 'Ollama 服务地址' : '留空使用默认地址'}
-                </p>
-              </div>
-
-              {/* Connection test result */}
-              {connectionTestResult && (
-                <div className={cn(
-                  "p-4 rounded-lg border flex items-start gap-3",
-                  connectionTestResult.success
-                    ? "bg-green-50 border-green-200"
-                    : "bg-red-50 border-red-200"
-                )}>
-                  {connectionTestResult.success ? (
-                    <Check className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  )}
-                  <div className="flex-1">
-                    <p className={cn(
-                      "text-sm font-medium",
-                      connectionTestResult.success ? "text-green-900" : "text-red-900"
-                    )}>
-                      {connectionTestResult.message}
-                    </p>
-                    {connectionTestResult.models && connectionTestResult.models.length > 0 && (
-                      <p className="text-xs text-green-700 mt-1">
-                        发现模型: {connectionTestResult.models.map(m => m.name).join(', ')}
-                      </p>
-                    )}
                   </div>
                 </div>
-              )}
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  模型名称 *
-                </label>
-                {isOllama && availableModels.length > 0 ? (
-                  <select
-                    required
-                    value={formData.model_name}
-                    onChange={(e) => setFormData({ ...formData, model_name: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">选择模型</option>
-                    {availableModels.map((modelName) => (
-                      <option key={modelName} value={modelName}>
-                        {modelName}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+                {connectionError && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-sm text-red-700">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    {connectionError}
+                  </div>
+                )}
+
+                {ollamaConnected && availableModels.length > 0 && (
+                  <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700 flex items-center gap-2">
+                    <Check className="h-4 w-4 flex-shrink-0" />
+                    已连接 Ollama，检测到 {availableModels.length} 个
+                    {{ chat: '对话', vision: '视觉', document: '文档分析', embedding: '向量', rerank: '重排序' }[formData.model_type] || ''}模型
+                  </div>
+                )}
+
+                {ollamaConnected && availableModels.length === 0 && (
+                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700 flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p>已连接 Ollama（共 {allOllamaModels.length} 个模型），未自动识别到匹配的{{ chat: '对话', vision: '视觉', document: '文档分析', embedding: '向量', rerank: '重排序' }[formData.model_type] || ''}模型。</p>
+                      <p className="mt-1">请在下方手动输入模型名称，或从全部模型列表中选择。</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 模型选择 */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-700">
+                      {manualInput ? '输入模型名称' : '选择模型'} *
+                    </label>
+                    {ollamaConnected && (
+                      <button
+                        type="button"
+                        onClick={() => setManualInput(!manualInput)}
+                        className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                      >
+                        {manualInput ? '从列表选择' : '手动输入'}
+                      </button>
+                    )}
+                  </div>
+
+                  {manualInput || !ollamaConnected ? (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        required
+                        value={formData.model_name}
+                        onChange={(e) => setFormData({ ...formData, model_name: e.target.value, name: formData.name || e.target.value })}
+                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="例如: qwen2.5vl:7b"
+                      />
+                      {!ollamaConnected && (
+                        <p className="text-xs text-amber-600 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          请先点击"检测连接"自动获取可用模型列表
+                        </p>
+                      )}
+                      {ollamaConnected && allOllamaModels.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs text-slate-500 mb-1.5">Ollama 中全部可用模型（点击填入）：</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {allOllamaModels.map((m) => (
+                              <button
+                                key={m.name}
+                                type="button"
+                                onClick={() => setFormData({ ...formData, model_name: m.name, name: formData.name || m.name })}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-md text-xs border transition-colors",
+                                  formData.model_name === m.name
+                                    ? "bg-blue-100 border-blue-400 text-blue-700 font-medium"
+                                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+                                )}
+                              >
+                                {m.name}{m.size ? ` (${formatSize(m.size)})` : ''}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <select
+                        required
+                        value={formData.model_name}
+                        onChange={(e) => handleModelSelect(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">-- 请选择模型 --</option>
+                        {availableModels.map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}{m.size ? ` (${formatSize(m.size)})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 非 Ollama 的 API 配置 */}
+          {!isOllama && (
+            <div>
+              <h4 className="font-semibold text-slate-900 mb-4">API 配置</h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Base URL</label>
+                  <input
+                    type="url"
+                    value={formData.base_url}
+                    onChange={(e) => setFormData({ ...formData, base_url: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://api.openai.com/v1 (留空使用默认)"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">模型名称 *</label>
                   <input
                     type="text"
                     required
                     value={formData.model_name}
                     onChange={(e) => setFormData({ ...formData, model_name: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder={isOllama ? "llama3.2 或 nomic-embed-text" : "gpt-4o-mini"}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="gpt-4o-mini"
                   />
-                )}
-                {isOllama && availableModels.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    点击"测试连接"自动检测可用模型
-                  </p>
-                )}
-              </div>
-
-              {!isOllama && (
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
                     API Key {!model && '*'}
@@ -625,7 +693,7 @@ function ModelFormModal({
                       required={!model}
                       value={formData.api_key}
                       onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
-                      className="w-full px-4 py-2 pr-12 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-4 py-2.5 pr-12 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder={model ? '留空保持不变' : 'sk-...'}
                     />
                     <button
@@ -633,51 +701,55 @@ function ModelFormModal({
                       onClick={() => setShowApiKey(!showApiKey)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded"
                     >
-                      {showApiKey ? (
-                        <EyeOff className="h-4 w-4 text-slate-400" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-slate-400" />
-                      )}
+                      {showApiKey ? <EyeOff className="h-4 w-4 text-slate-400" /> : <Eye className="h-4 w-4 text-slate-400" />}
                     </button>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* 高级设置 */}
+          {/* 配置名称 + 高级设置 */}
           <div>
-            <h4 className="font-semibold text-slate-900 mb-4">高级设置</h4>
-            <div className="grid grid-cols-2 gap-4">
+            <h4 className="font-semibold text-slate-900 mb-4">其他设置</h4>
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  最大并发数
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">配置名称 *</label>
                 <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={formData.max_concurrency}
-                  onChange={(e) => setFormData({ ...formData, max_concurrency: parseInt(e.target.value) })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="给这个模型配置起个名字"
                 />
+                <p className="text-xs text-slate-500 mt-1">用于在系统中区分不同模型配置</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  速率限制 (RPM)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.rate_limit_rpm}
-                  onChange={(e) => setFormData({ ...formData, rate_limit_rpm: parseInt(e.target.value) })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">最大并发数</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={formData.max_concurrency}
+                    onChange={(e) => setFormData({ ...formData, max_concurrency: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">速率限制 (RPM)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.rate_limit_rpm}
+                    onChange={(e) => setFormData({ ...formData, rate_limit_rpm: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="mt-4">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -690,63 +762,22 @@ function ModelFormModal({
             </div>
           </div>
 
-          {/* 提示信息 */}
-          <div className={cn(
-            "border rounded-lg p-4 flex gap-3",
-            isOllama ? "bg-green-50 border-green-200" : "bg-blue-50 border-blue-200"
-          )}>
-            <AlertCircle className={cn(
-              "h-5 w-5 flex-shrink-0 mt-0.5",
-              isOllama ? "text-green-600" : "text-blue-600"
-            )} />
-            <div className="text-sm">
-              <p className={cn(
-                "font-medium mb-1",
-                isOllama ? "text-green-900" : "text-blue-900"
-              )}>
-                {isOllama ? 'Ollama 本地模型配置' : '配置提示'}
-              </p>
-              <ul className={cn(
-                "list-disc list-inside space-y-1",
-                isOllama ? "text-green-800" : "text-blue-800"
-              )}>
-                {isOllama ? (
-                  <>
-                    <li>Ollama 是本地运行的模型，无需 API Key</li>
-                    <li>确保 Ollama 服务正在运行（默认端口 11434）</li>
-                    <li>点击"测试连接"自动检测可用模型</li>
-                    <li>Embedding 模型通常包含 "embed" 关键词</li>
-                  </>
-                ) : (
-                  <>
-                    <li>API Key 将被加密存储</li>
-                    <li>建议根据实际使用情况调整并发数和速率限制</li>
-                    <li>不同提供商的 Base URL 格式可能不同</li>
-                  </>
-                )}
-              </ul>
-            </div>
-          </div>
-
           {/* 按钮 */}
           <div className="flex gap-3 pt-4 border-t border-slate-200">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+              className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
             >
               取消
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={loading || (isOllama && !formData.model_name)}
+              className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  保存中...
-                </>
+                <><Loader2 className="h-4 w-4 animate-spin" />保存中...</>
               ) : (
                 '保存配置'
               )}

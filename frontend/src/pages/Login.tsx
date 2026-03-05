@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Lock, Mail, ArrowRight, Loader2, Sparkles, User } from 'lucide-react';
-import { cn } from '../utils';
+import { Shield, Lock, Mail, ArrowRight, Loader2, Eye, EyeOff, BrainCircuit, Activity, Network, ShieldAlert } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -11,12 +10,34 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [displayText, setDisplayText] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     username: '',
     password: ''
   });
+
+  // 打字效果
+  useEffect(() => {
+    const fullText = '网络安全专家';
+    let i = 0;
+    
+    const typeInterval = setInterval(() => {
+      if (i < fullText.length) {
+        setDisplayText(fullText.substring(0, i + 1));
+        i++;
+      } else {
+        // 3秒后清空重新开始
+        setTimeout(() => {
+          i = 0;
+          setDisplayText('');
+        }, 3000);
+      }
+    }, 200);
+
+    return () => clearInterval(typeInterval);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,28 +46,22 @@ export default function Login() {
 
     try {
       if (isRegisterMode) {
-        // 验证注册表单
         if (!formData.email || !formData.username || !formData.password) {
-          setError('Please fill in all fields');
+          setError('请填写所有必填项');
           setLoading(false);
           return;
         }
-        
-        console.log('Registering user:', { email: formData.email, username: formData.username });
         await register({
           email: formData.email,
           username: formData.username,
           password: formData.password,
         });
       } else {
-        // 验证登录表单
         if (!formData.email || !formData.password) {
-          setError('Please fill in all fields');
+          setError('请填写所有必填项');
           setLoading(false);
           return;
         }
-        
-        console.log('Logging in user:', { email: formData.email });
         await login({
           email: formData.email,
           password: formData.password,
@@ -55,211 +70,295 @@ export default function Login() {
       navigate('/dashboard');
     } catch (err: any) {
       console.error('Authentication error:', err);
-      const errorMessage = err.response?.data?.detail || err.message || 'Authentication failed';
+      const errorMessage = err.response?.data?.detail || err.message || '认证失败';
       setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSSO = (provider: string) => {
+    // SSO 待开发
+    alert(`SSO ${provider} 登录 - 功能开发中...`);
+    console.log(`SSO ${provider} clicked - To be developed`);
+  };
+
   return (
-    <div className="min-h-screen bg-[#030712] relative flex items-center justify-center overflow-hidden font-sans selection:bg-blue-500/30 text-slate-200">
+    <div className="min-h-screen bg-slate-950 relative flex items-center justify-center overflow-hidden">
       
-      {/* Dynamic Background Effects */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-violet-600/10 rounded-full blur-[120px]" />
-        {/* Tech Grid Overlay */}
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 mix-blend-soft-light"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_100%)]"></div>
+      {/* Animated Background */}
+      <div className="fixed inset-0 z-0">
+        {/* Cyber Grid */}
+        <div 
+          className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: 'linear-gradient(rgba(6, 182, 212, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(6, 182, 212, 0.1) 1px, transparent 1px)',
+            backgroundSize: '50px 50px',
+            maskImage: 'radial-gradient(circle at center, black 40%, transparent 80%)'
+          }}
+        />
+        {/* Floating Orbs */}
+        <motion.div 
+          animate={{ y: [0, 30, 0], scale: [1, 1.1, 0.9] }}
+          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-cyan-500 rounded-full blur-3xl opacity-30"
+        />
+        <motion.div 
+          animate={{ y: [0, -30, 0], scale: [1, 0.9, 1.1] }}
+          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut", delay: -5 }}
+          className="absolute bottom-[-10%] right-[-10%] w-72 h-72 bg-emerald-500 rounded-full blur-3xl opacity-30"
+        />
+        <motion.div 
+          animate={{ y: [0, 20, 0], scale: [1, 1.05, 0.95] }}
+          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut", delay: -10 }}
+          className="absolute top-[40%] left-[60%] w-64 h-64 bg-blue-500 rounded-full blur-3xl opacity-30"
+        />
       </div>
 
-      <motion.div 
+      {/* Main Container */}
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-[420px] px-4"
+        transition={{ duration: 0.6 }}
+        className="relative z-10 w-full max-w-6xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center"
       >
-        {/* Glass Card */}
-        <div className="backdrop-blur-xl bg-slate-900/40 border border-slate-700/50 shadow-2xl rounded-2xl overflow-hidden ring-1 ring-white/10">
-          
-          {/* Header Section */}
-          <div className="p-8 pt-10 text-center relative">
-            <motion.div 
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className="mx-auto w-16 h-16 bg-gradient-to-tr from-blue-600 to-violet-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-6 group relative"
-            >
-              <div className="absolute inset-0 bg-white/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <Shield className="h-8 w-8 text-white relative z-10" />
-            </motion.div>
-            
-            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-100 to-slate-300 tracking-tight">
-              CypherGuard AI
-            </h1>
-            <div className="flex items-center justify-center gap-2 mt-2 text-slate-400 text-sm">
-              <Sparkles className="h-3 w-3 text-blue-400" />
-              <span>Next-Gen Security Intelligence</span>
+        {/* Left Side: Branding (Hidden on mobile) */}
+        <div className="hidden lg:flex flex-col space-y-8 p-8">
+          {/* Logo */}
+          <div className="flex items-center space-x-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
+              <Shield className="w-7 h-7 text-white" />
             </div>
-            <p className="text-xs text-slate-500 mt-3">
-              {isRegisterMode ? 'Create your account' : 'Sign in to continue'}
+            <div>
+              <h1 className="text-2xl font-bold text-white">CyberMind AI</h1>
+              <p className="text-slate-400 text-sm">智能网络安全知识体系</p>
+            </div>
+          </div>
+
+          {/* Tagline with Typewriter */}
+          <div className="space-y-4">
+            <h2 className="text-4xl font-bold text-white leading-tight">
+              AI驱动的<br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400">
+                {displayText}<span className="text-cyan-400 animate-pulse">|</span>
+              </span>
+            </h2>
+            <p className="text-slate-400 text-lg leading-relaxed max-w-md">
+              融合深度学习与威胁情报，构建企业级网络安全知识图谱。实时分析、智能推理、协同防御。
             </p>
           </div>
 
-          {/* Form Section */}
-          <div className="p-8 pt-2 pb-10">
-            {error && (
+          {/* Feature Cards */}
+          <div className="grid grid-cols-2 gap-4 mt-8">
+            {[
+              { icon: BrainCircuit, title: 'AI 知识推理', desc: '基于大模型的智能关联分析', color: 'cyan' },
+              { icon: Activity, title: '实时威胁监测', desc: '毫秒级异常行为检测', color: 'emerald' },
+              { icon: Network, title: '知识图谱构建', desc: '自动化APT攻击链路溯源', color: 'blue' },
+              { icon: ShieldAlert, title: '智能防御策略', desc: '动态生成防护规则', color: 'purple' }
+            ].map((feature, idx) => (
               <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm"
+                key={idx}
+                whileHover={{ scale: 1.05 }}
+                className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition-all duration-300 group cursor-pointer"
               >
-                <div className="flex items-start gap-2">
-                  <span className="text-red-500 font-bold">✕</span>
-                  <div>
-                    <p className="font-semibold">Authentication Failed</p>
-                    <p className="text-xs mt-1">{error}</p>
-                  </div>
+                <div className={`w-10 h-10 rounded-lg bg-${feature.color}-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
+                  <feature.icon className={`w-5 h-5 text-${feature.color}-400`} />
                 </div>
+                <h3 className="text-white font-semibold mb-1">{feature.title}</h3>
+                <p className="text-slate-400 text-sm">{feature.desc}</p>
               </motion.div>
-            )}
-            
-            <form onSubmit={handleSubmit} className="space-y-5">
-              
-              {/* Email/Username Input */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider ml-1">
-                  {isRegisterMode ? 'Email' : 'Email or Username'}
-                </label>
-                <div 
-                  className={cn(
-                    "relative group transition-all duration-300 rounded-xl",
-                    focusedField === 'email' ? "ring-2 ring-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)]" : "hover:bg-white/5"
-                  )}
-                >
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Mail className={cn("h-5 w-5 transition-colors", focusedField === 'email' ? "text-blue-400" : "text-slate-500")} />
-                  </div>
-                  <input
-                    type={isRegisterMode ? "email" : "text"}
-                    required
-                    className="block w-full pl-11 pr-4 py-3.5 bg-slate-900/50 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-600 focus:outline-none focus:border-transparent focus:bg-slate-900/80 transition-all font-medium"
-                    placeholder={isRegisterMode ? "name@cypherguard.ai" : "email or username"}
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    onFocus={() => setFocusedField('email')}
-                    onBlur={() => setFocusedField(null)}
-                  />
-                </div>
-              </div>
-
-              {/* Username Input (only for register) */}
-              {isRegisterMode && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="space-y-1.5"
-                >
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider ml-1">Username</label>
-                  <div 
-                    className={cn(
-                      "relative group transition-all duration-300 rounded-xl",
-                      focusedField === 'username' ? "ring-2 ring-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)]" : "hover:bg-white/5"
-                    )}
-                  >
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <User className={cn("h-5 w-5 transition-colors", focusedField === 'username' ? "text-blue-400" : "text-slate-500")} />
-                    </div>
-                    <input
-                      type="text"
-                      required={isRegisterMode}
-                      className="block w-full pl-11 pr-4 py-3.5 bg-slate-900/50 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-600 focus:outline-none focus:border-transparent focus:bg-slate-900/80 transition-all font-medium"
-                      placeholder="username"
-                      value={formData.username}
-                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      onFocus={() => setFocusedField('username')}
-                      onBlur={() => setFocusedField(null)}
-                    />
-                  </div>
-                </motion.div>
-              )}
-
-              {/* Password Input */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider ml-1">
-                  Password
-                </label>
-                <div 
-                  className={cn(
-                    "relative group transition-all duration-300 rounded-xl",
-                    focusedField === 'password' ? "ring-2 ring-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)]" : "hover:bg-white/5"
-                  )}
-                >
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Lock className={cn("h-5 w-5 transition-colors", focusedField === 'password' ? "text-blue-400" : "text-slate-500")} />
-                  </div>
-                  <input
-                    type="password"
-                    required
-                    minLength={isRegisterMode ? 6 : undefined}
-                    className="block w-full pl-11 pr-4 py-3.5 bg-slate-900/50 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-600 focus:outline-none focus:border-transparent focus:bg-slate-900/80 transition-all font-medium"
-                    placeholder="••••••••••••"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    onFocus={() => setFocusedField('password')}
-                    onBlur={() => setFocusedField(null)}
-                  />
-                </div>
-                {isRegisterMode && (
-                  <p className="text-xs text-slate-500 ml-1 mt-1">
-                    Minimum 6 characters
-                  </p>
-                )}
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full relative group overflow-hidden rounded-xl p-[1px]"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-violet-600 group-hover:from-blue-500 group-hover:to-violet-500 transition-all duration-300" />
-                <div className="relative bg-transparent h-full w-full px-4 py-3.5 flex items-center justify-center gap-2 text-white font-semibold tracking-wide">
-                  {loading ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-white/90" />
-                  ) : (
-                    <>
-                      <span>{isRegisterMode ? 'Create Account' : 'Authenticate'}</span>
-                      <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                    </>
-                  )}
-                </div>
-              </button>
-            </form>
-
-            {/* Toggle Register/Login */}
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => {
-                  setIsRegisterMode(!isRegisterMode);
-                  setError(null);
-                }}
-                className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                {isRegisterMode ? 'Already have an account? Sign in' : "Don't have an account? Register"}
-              </button>
-            </div>
-
-            {/* Footer */}
-            <div className="mt-8 pt-6 border-t border-slate-700/50 text-center">
-              <p className="text-xs text-slate-500">
-                Restricted System. Unauthorized access is monitored.
-              </p>
-            </div>
+            ))}
           </div>
         </div>
+
+        {/* Right Side: Login Form */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+          className="bg-slate-900/60 backdrop-blur-2xl border border-slate-800 rounded-3xl p-8 md:p-10 shadow-2xl"
+        >
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold text-white mb-2">
+              {isRegisterMode ? '创建账户' : '欢迎回来'}
+            </h3>
+            <p className="text-slate-400">
+              {isRegisterMode ? '加入 CyberMind 安全社区' : '登录您的 CyberMind 账户'}
+            </p>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm"
+            >
+              {error}
+            </motion.div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Email/Username Input */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300">
+                {isRegisterMode ? '邮箱' : '邮箱或用户名'}
+              </label>
+              <div className="relative group">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-hover:text-cyan-400 transition-colors" />
+                <input
+                  type={isRegisterMode ? 'email' : 'text'}
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full pl-12 pr-4 py-4 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200"
+                  placeholder={isRegisterMode ? "security@company.com" : "admin@company.com 或 admin"}
+                  required
+                />
+              </div>
+              {!isRegisterMode && (
+                <p className="text-xs text-slate-400">可使用邮箱或用户名登录</p>
+              )}
+            </div>
+
+            {/* Username Input (Register Only) */}
+            {isRegisterMode && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300">用户名</label>
+                <input
+                  type="text"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  className="w-full px-4 py-4 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200"
+                  placeholder="your_username"
+                  required
+                />
+              </div>
+            )}
+
+            {/* Password Input */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300">密码</label>
+              <div className="relative group">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full pl-4 pr-12 py-4 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200"
+                  placeholder="••••••••••••"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-400 transition-colors focus:outline-none"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Remember & Forgot (Login Only) */}
+            {!isRegisterMode && (
+              <div className="flex items-center justify-between text-sm">
+                <label className="flex items-center space-x-2 cursor-pointer group">
+                  <input type="checkbox" className="w-4 h-4 rounded bg-slate-700 border-slate-600 text-cyan-500" />
+                  <span className="text-slate-400 group-hover:text-slate-300">记住设备</span>
+                </label>
+                <a href="#" className="text-cyan-400 hover:text-cyan-300 transition-colors font-medium">
+                  忘记密钥?
+                </a>
+              </div>
+            )}
+
+            {/* Security Indicator */}
+            <div className="flex items-center space-x-2 py-2 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-emerald-400 text-xs font-medium">AI 安全防护已激活</span>
+              <Lock className="w-3 h-3 text-emerald-400 ml-auto" />
+            </div>
+
+            {/* Submit Button */}
+            <motion.button
+              whileHover={{ scale: loading ? 1 : 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-500/25 transform transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>验证身份中...</span>
+                </>
+              ) : (
+                <>
+                  <span>{isRegisterMode ? '创建账户' : '进入系统'}</span>
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
+            </motion.button>
+          </form>
+
+          {/* Divider */}
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-700" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-slate-900/50 text-slate-500">或者使用 SSO 登录</span>
+            </div>
+          </div>
+
+          {/* SSO Buttons */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Google', key: 'google' },
+              { label: 'GitHub', key: 'github' },
+              { label: '企业 SSO', key: 'enterprise' }
+            ].map((sso) => (
+              <motion.button
+                key={sso.key}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => handleSSO(sso.label)}
+                type="button"
+                className="bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 hover:border-slate-600 py-3 px-4 rounded-xl transition-all duration-200 flex items-center justify-center group"
+                title={`${sso.label} 登录 - 开发中`}
+              >
+                <span className="text-slate-300 text-sm group-hover:text-white transition-colors">
+                  {sso.label}
+                </span>
+              </motion.button>
+            ))}
+          </div>
+
+          {/* Toggle Mode */}
+          <div className="text-center mt-8 text-slate-400">
+            {isRegisterMode ? (
+              <>
+                已有账户?{' '}
+                <button
+                  onClick={() => { setIsRegisterMode(false); setError(null); }}
+                  className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+                >
+                  登录
+                </button>
+              </>
+            ) : (
+              <>
+                没有账户?{' '}
+                <button
+                  onClick={() => { setIsRegisterMode(true); setError(null); }}
+                  className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+                >
+                  注册
+                </button>
+              </>
+            )}
+          </div>
+        </motion.div>
       </motion.div>
     </div>
   );

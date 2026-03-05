@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     url_fetch_max_mb: int = 50
     url_fetch_timeout_seconds: int = 30
 
+    # API Key encryption (Fernet symmetric key, 32-byte base64-encoded)
+    api_key_encryption_secret: str = "dGhpcy1pcy1hLXRlc3Qta2V5LWNoYW5nZS1pdC0xMjM="
+
+    # SSRF protection
+    ssrf_blocked_cidrs: str = "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,::1/128"
+    url_fetch_allowed_schemes: str = "http,https"
+    url_fetch_max_redirects: int = 5
+
     # Timeouts
     request_timeout_seconds: int = 300
     embedding_timeout_seconds: int = 60
