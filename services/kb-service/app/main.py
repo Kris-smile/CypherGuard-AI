@@ -20,13 +20,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from common.config import Settings
 from common.database import Database
-from common.models import User, Document, IngestionTask, Chunk, FAQEntry, Tag, Entity
+from sqlalchemy import text as sql_text
+from sqlalchemy import func
+
+from common.models import User, Document, IngestionTask, Chunk, FAQEntry, Tag, Entity, KnowledgeBase
 from common.schemas import (
     DocumentResponse, TaskResponse, URLImportRequest,
     FAQCreate, FAQUpdate, FAQResponse,
     TagCreate, TagResponse,
     ChunkResponse, ChunkUpdate,
     EntityResponse,
+    KnowledgeBaseCreate, KnowledgeBaseUpdate, KnowledgeBaseResponse, KnowledgeBaseListResponse,
+    KBSearchResponse, KBSearchChunkItem, KBSearchFAQItem,
 )
 from common.auth import decode_token_payload, TokenPayload
 from common.exceptions import NotFoundError, AuthenticationError, AuthorizationError, ValidationError
@@ -129,11 +134,185 @@ async def health_check():
     return "OK"
 
 
+# ============== Knowledge Base CRUD ==============
+
+@app.post("/kb/knowledge-bases", response_model=KnowledgeBaseResponse, status_code=status.HTTP_201_CREATED)
+async def create_knowledge_base(
+    data: KnowledgeBaseCreate,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    """Create a new knowledge base (document or FAQ type)."""
+    kb = KnowledgeBase(
+        owner_user_id=user.sub,
+        name=data.name,
+        tags=data.tags or [],
+        kb_type=data.kb_type,
+    )
+    session.add(kb)
+    session.commit()
+    session.refresh(kb)
+    return KnowledgeBaseResponse.model_validate(kb)
+
+
+@app.get("/kb/knowledge-bases", response_model=List[KnowledgeBaseListResponse])
+async def list_knowledge_bases(
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100,
+):
+    """List knowledge bases with document/FAQ counts."""
+    kbs = session.query(KnowledgeBase).filter(
+        KnowledgeBase.owner_user_id == user.sub
+    ).order_by(KnowledgeBase.created_at.desc()).offset(skip).limit(limit).all()
+
+    result = []
+    for kb in kbs:
+        doc_count = session.query(func.count(Document.id)).filter(
+            Document.knowledge_base_id == kb.id,
+            Document.status != "deleted",
+        ).scalar() or 0
+        faq_count = session.query(func.count(FAQEntry.id)).filter(
+            FAQEntry.knowledge_base_id == kb.id,
+        ).scalar() or 0
+        result.append(KnowledgeBaseListResponse(
+            **KnowledgeBaseResponse.model_validate(kb).model_dump(),
+            document_count=doc_count,
+            faq_count=faq_count,
+        ))
+    return result
+
+
+@app.get("/kb/knowledge-bases/{kb_id}", response_model=KnowledgeBaseResponse)
+async def get_knowledge_base(
+    kb_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    kb = session.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id,
+        KnowledgeBase.owner_user_id == user.sub,
+    ).first()
+    if not kb:
+        raise NotFoundError("知识库未找到")
+    return KnowledgeBaseResponse.model_validate(kb)
+
+
+@app.put("/kb/knowledge-bases/{kb_id}", response_model=KnowledgeBaseResponse)
+async def update_knowledge_base(
+    kb_id: UUID,
+    data: KnowledgeBaseUpdate,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    kb = session.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id,
+        KnowledgeBase.owner_user_id == user.sub,
+    ).first()
+    if not kb:
+        raise NotFoundError("知识库未找到")
+    if data.name is not None:
+        kb.name = data.name
+    if data.tags is not None:
+        kb.tags = data.tags
+    session.commit()
+    session.refresh(kb)
+    return KnowledgeBaseResponse.model_validate(kb)
+
+
+@app.delete("/kb/knowledge-bases/{kb_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_knowledge_base(
+    kb_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    kb = session.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id,
+        KnowledgeBase.owner_user_id == user.sub,
+    ).first()
+    if not kb:
+        raise NotFoundError("知识库未找到")
+    session.delete(kb)
+    session.commit()
+    return None
+
+
+@app.get("/kb/knowledge-bases/{kb_id}/search", response_model=KBSearchResponse)
+async def search_knowledge_base(
+    kb_id: UUID,
+    q: str,
+    limit: int = 20,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    """Keyword search within a knowledge base (chunks for document-type, FAQ for faq-type)."""
+    kb = session.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id,
+        KnowledgeBase.owner_user_id == user.sub,
+    ).first()
+    if not kb:
+        raise NotFoundError("知识库未找到")
+
+    chunks_out: List[KBSearchChunkItem] = []
+    faq_out: List[KBSearchFAQItem] = []
+
+    query = (q or "").strip()
+    if not query:
+        return KBSearchResponse(chunks=chunks_out, faq=faq_out)
+
+    if kb.kb_type == "document":
+        try:
+            sql = sql_text("""
+                SELECT c.id, c.document_id, c.chunk_index, c.text, d.title
+                FROM chunks c
+                JOIN documents d ON c.document_id = d.id
+                WHERE d.knowledge_base_id = :kb_id
+                  AND d.status = 'ready'
+                  AND c.is_enabled = true
+                  AND c.tsv @@ plainto_tsquery('english', :query)
+                ORDER BY ts_rank(c.tsv, plainto_tsquery('english', :query)) DESC
+                LIMIT :lim
+            """)
+            rows = session.execute(sql, {"kb_id": kb_id, "query": query, "lim": limit}).fetchall()
+            for row in rows:
+                text = (row.text or "")[:500]
+                chunks_out.append(KBSearchChunkItem(
+                    chunk_id=row.id,
+                    document_id=row.document_id,
+                    document_title=row.title or "",
+                    snippet=text + ("..." if len(row.text or "") > 500 else ""),
+                    chunk_index=row.chunk_index,
+                ))
+        except Exception as e:
+            logger.warning(f"KB chunk search error: {e}")
+
+    elif kb.kb_type == "faq":
+        pattern = f"%{query}%"
+        faq_rows = session.query(FAQEntry).filter(
+            FAQEntry.knowledge_base_id == kb_id,
+            (FAQEntry.question.ilike(pattern)) | (FAQEntry.answer.ilike(pattern)),
+        ).limit(limit).all()
+        for faq in faq_rows:
+            snippet = faq.question if query.lower() in (faq.question or "").lower() else (faq.answer or "")[:300]
+            faq_out.append(KBSearchFAQItem(
+                faq_id=faq.id,
+                question=faq.question or "",
+                answer=faq.answer or "",
+                snippet=snippet + ("..." if len(faq.answer or "") > 300 else ""),
+            ))
+
+    return KBSearchResponse(chunks=chunks_out, faq=faq_out)
+
+
+# ============== Documents ==============
+
 @app.post("/kb/documents/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
+    knowledge_base_id: Optional[str] = Form(None),
     user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db)
 ):
@@ -141,6 +320,7 @@ async def upload_document(
     user_id = user.sub
     doc_title = title or file.filename
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
+    kb_id = UUID(knowledge_base_id) if knowledge_base_id else None
 
     # Check file size
     file_content = await file.read()
@@ -148,18 +328,20 @@ async def upload_document(
     if len(file_content) > max_bytes:
         raise ValidationError(f"文件大小超过限制 ({settings.upload_max_mb}MB)")
 
-    # Check file type
+    # Check file extension (primary validation)
+    allowed_extensions = {".md", ".pdf", ".html", ".htm"}
+    filename = file.filename or ""
+    file_ext = os.path.splitext(filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        raise ValidationError(
+            f"不支持的文件格式「{file_ext}」，仅允许上传知识文档：{', '.join(sorted(allowed_extensions))}"
+        )
+
+    # Check MIME type (secondary validation, allow octet-stream for .md files)
     allowed_types = [
         "application/pdf", "text/plain", "text/markdown",
         "text/html", "application/xhtml+xml",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/vnd.ms-excel",
-        "text/csv",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "application/vnd.ms-powerpoint",
-        "application/octet-stream",
+        "application/octet-stream",  # browsers may send this for .md files
     ]
     if file.content_type and file.content_type not in allowed_types:
         raise ValidationError(f"不支持的文件类型: {file.content_type}")
@@ -179,6 +361,7 @@ async def upload_document(
 
         document = Document(
             owner_user_id=user_id,
+            knowledge_base_id=kb_id,
             title=doc_title,
             source_type="upload",
             source_uri=f"s3://{settings.minio_bucket}/{object_name}",
@@ -190,18 +373,7 @@ async def upload_document(
         session.commit()
         session.refresh(document)
 
-        task = celery_app.send_task("worker.process_document", args=[str(document.id)], queue="celery")
-
-        ingestion_task = IngestionTask(
-            document_id=document.id,
-            task_type="parse",
-            celery_task_id=task.id,
-            status="pending"
-        )
-        session.add(ingestion_task)
-        session.commit()
-
-        return DocumentResponse.from_orm(document)
+        return DocumentResponse.model_validate(document)
 
     except S3Error as e:
         raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
@@ -246,7 +418,7 @@ async def import_url(
     session.add(ingestion_task)
     session.commit()
 
-    return DocumentResponse.from_orm(document)
+    return DocumentResponse.model_validate(document)
 
 
 @app.get("/kb/documents", response_model=List[DocumentResponse])
@@ -254,13 +426,17 @@ async def list_documents(
     user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db),
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
+    knowledge_base_id: Optional[UUID] = None,
 ):
-    documents = session.query(Document).filter(
+    q = session.query(Document).filter(
         Document.owner_user_id == user.sub,
         Document.status != "deleted"
-    ).order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
-    return [DocumentResponse.from_orm(doc) for doc in documents]
+    )
+    if knowledge_base_id is not None:
+        q = q.filter(Document.knowledge_base_id == knowledge_base_id)
+    documents = q.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+    return [DocumentResponse.model_validate(doc) for doc in documents]
 
 
 @app.get("/kb/documents/{document_id}", response_model=DocumentResponse)
@@ -275,7 +451,7 @@ async def get_document(
     ).first()
     if not document:
         raise NotFoundError("文档未找到")
-    return DocumentResponse.from_orm(document)
+    return DocumentResponse.model_validate(document)
 
 
 @app.delete("/kb/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -338,7 +514,55 @@ async def reindex_document(
     session.add(ingestion_task)
     session.commit()
 
-    return DocumentResponse.from_orm(document)
+    return DocumentResponse.model_validate(document)
+
+
+@app.post("/kb/documents/{document_id}/learn", response_model=DocumentResponse)
+async def learn_document(
+    document_id: UUID,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    """Trigger document vectorization and structuring pipeline (parse → chunk → embed → index)."""
+    document = session.query(Document).filter(
+        Document.id == document_id,
+        Document.owner_user_id == user.sub
+    ).first()
+    if not document:
+        raise NotFoundError("文档未找到")
+
+    if document.status == "deleted":
+        raise ValidationError("已删除的文档不能学习")
+    if document.status == "processing":
+        raise ValidationError("文档正在处理中，请稍后再试")
+
+    session.query(Chunk).filter(Chunk.document_id == document_id).delete()
+    session.query(Entity).filter(Entity.document_id == document_id).delete()
+
+    document.status = "processing"
+    document.version = (document.version or 1) + 1
+    session.commit()
+    session.refresh(document)
+
+    if document.source_type == "url":
+        task_name = "worker.fetch_and_process_url"
+        task_type = "fetch_url"
+    else:
+        task_name = "worker.process_document"
+        task_type = "parse"
+
+    task = celery_app.send_task(task_name, args=[str(document.id)], queue="celery")
+
+    ingestion_task = IngestionTask(
+        document_id=document.id,
+        task_type=task_type,
+        celery_task_id=task.id,
+        status="pending"
+    )
+    session.add(ingestion_task)
+    session.commit()
+
+    return DocumentResponse.model_validate(document)
 
 
 @app.get("/kb/tasks", response_model=List[TaskResponse])
@@ -353,7 +577,7 @@ async def list_tasks(
     if document_id:
         query = query.filter(IngestionTask.document_id == document_id)
     tasks = query.order_by(IngestionTask.created_at.desc()).all()
-    return [TaskResponse.from_orm(task) for task in tasks]
+    return [TaskResponse.model_validate(task) for task in tasks]
 
 
 # ============== FAQ CRUD ==============
@@ -366,6 +590,7 @@ async def create_faq(
 ):
     faq = FAQEntry(
         owner_user_id=user.sub,
+        knowledge_base_id=data.knowledge_base_id,
         question=data.question,
         answer=data.answer,
         similar_questions=data.similar_questions or [],
@@ -376,7 +601,7 @@ async def create_faq(
     session.refresh(faq)
 
     celery_app.send_task("worker.index_faq", args=[str(faq.id)], queue="celery")
-    return FAQResponse.from_orm(faq)
+    return FAQResponse.model_validate(faq)
 
 
 @app.get("/kb/faq", response_model=List[FAQResponse])
@@ -384,12 +609,14 @@ async def list_faq(
     user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db),
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
+    knowledge_base_id: Optional[UUID] = None,
 ):
-    entries = session.query(FAQEntry).filter(
-        FAQEntry.owner_user_id == user.sub
-    ).order_by(FAQEntry.created_at.desc()).offset(skip).limit(limit).all()
-    return [FAQResponse.from_orm(e) for e in entries]
+    q = session.query(FAQEntry).filter(FAQEntry.owner_user_id == user.sub)
+    if knowledge_base_id is not None:
+        q = q.filter(FAQEntry.knowledge_base_id == knowledge_base_id)
+    entries = q.order_by(FAQEntry.created_at.desc()).offset(skip).limit(limit).all()
+    return [FAQResponse.model_validate(e) for e in entries]
 
 
 @app.put("/kb/faq/{faq_id}", response_model=FAQResponse)
@@ -411,7 +638,7 @@ async def update_faq(
     session.refresh(faq)
     if "question" in update_data or "similar_questions" in update_data:
         celery_app.send_task("worker.index_faq", args=[str(faq.id)], queue="celery")
-    return FAQResponse.from_orm(faq)
+    return FAQResponse.model_validate(faq)
 
 
 @app.delete("/kb/faq/{faq_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -471,7 +698,7 @@ async def list_tags(
     session: Session = Depends(get_db)
 ):
     tags = session.query(Tag).order_by(Tag.name).all()
-    return [TagResponse.from_orm(t) for t in tags]
+    return [TagResponse.model_validate(t) for t in tags]
 
 
 @app.post("/kb/tags", response_model=TagResponse, status_code=status.HTTP_201_CREATED)
@@ -487,7 +714,7 @@ async def create_tag(
     session.add(tag)
     session.commit()
     session.refresh(tag)
-    return TagResponse.from_orm(tag)
+    return TagResponse.model_validate(tag)
 
 
 @app.delete("/kb/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -520,7 +747,7 @@ async def list_chunks(
     chunks = session.query(Chunk).filter(
         Chunk.document_id == document_id
     ).order_by(Chunk.chunk_index).all()
-    return [ChunkResponse.from_orm(c) for c in chunks]
+    return [ChunkResponse.model_validate(c) for c in chunks]
 
 
 @app.put("/kb/chunks/{chunk_id}", response_model=ChunkResponse)
@@ -553,7 +780,7 @@ async def update_chunk(
     if text_changed:
         celery_app.send_task("worker.reindex_chunk", args=[str(chunk_id)], queue="celery")
 
-    return ChunkResponse.from_orm(chunk)
+    return ChunkResponse.model_validate(chunk)
 
 
 @app.patch("/kb/chunks/{chunk_id}/toggle", response_model=ChunkResponse)
@@ -570,7 +797,7 @@ async def toggle_chunk(
     chunk.is_enabled = not chunk.is_enabled
     session.commit()
     session.refresh(chunk)
-    return ChunkResponse.from_orm(chunk)
+    return ChunkResponse.model_validate(chunk)
 
 
 # ============== Entity Queries ==============
@@ -587,7 +814,7 @@ async def list_entities(
     if not doc:
         raise NotFoundError("文档未找到")
     entities = session.query(Entity).filter(Entity.document_id == document_id).all()
-    return [EntityResponse.from_orm(e) for e in entities]
+    return [EntityResponse.model_validate(e) for e in entities]
 
 
 if __name__ == "__main__":

@@ -5,7 +5,14 @@ import type { FAQEntry } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils';
 
-export default function FAQManager() {
+interface FAQManagerProps {
+  /** 当在知识库详情内使用时，只显示该知识库下的 FAQ，新建时也会归属到该知识库 */
+  knowledgeBaseId?: string;
+  /** 列表变更后回调（如刷新父级统计） */
+  onListChange?: () => void;
+}
+
+export default function FAQManager({ knowledgeBaseId, onListChange }: FAQManagerProps = {}) {
   const [faqs, setFaqs] = useState<FAQEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -18,18 +25,19 @@ export default function FAQManager() {
   const [similarQuestions, setSimilarQuestions] = useState('');
   const [faqTags, setFaqTags] = useState('');
 
-  useEffect(() => { loadFAQs(); }, []);
-
   const loadFAQs = async () => {
     try {
-      const data = await kbAPI.listFAQ();
+      const data = await kbAPI.listFAQ(0, 100, knowledgeBaseId);
       setFaqs(data);
+      onListChange?.();
     } catch (e) {
       console.error('Failed to load FAQs:', e);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => { loadFAQs(); }, [knowledgeBaseId]);
 
   const resetForm = () => {
     setQuestion('');
@@ -47,6 +55,7 @@ export default function FAQManager() {
       answer: answer.trim(),
       similar_questions: similarQuestions ? similarQuestions.split('\n').map(s => s.trim()).filter(Boolean) : [],
       tags: faqTags ? faqTags.split(',').map(s => s.trim()).filter(Boolean) : [],
+      ...(knowledgeBaseId && !editingId ? { knowledge_base_id: knowledgeBaseId } : {}),
     };
 
     try {
@@ -129,14 +138,16 @@ export default function FAQManager() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <label className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors shadow-sm",
-            importing && "opacity-50 pointer-events-none"
-          )}>
-            <Upload className="h-4 w-4 text-slate-600" />
-            {importing ? '导入中...' : 'CSV 导入'}
-            <input type="file" accept=".csv" onChange={handleCSVImport} className="hidden" />
-          </label>
+          {!knowledgeBaseId && (
+            <label className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors shadow-sm",
+              importing && "opacity-50 pointer-events-none"
+            )}>
+              <Upload className="h-4 w-4 text-slate-600" />
+              {importing ? '导入中...' : 'CSV 导入'}
+              <input type="file" accept=".csv" onChange={handleCSVImport} className="hidden" />
+            </label>
+          )}
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"

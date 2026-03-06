@@ -39,13 +39,50 @@ CREATE TABLE IF NOT EXISTS faq_entries (
     owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     question TEXT NOT NULL,
     answer TEXT NOT NULL,
-    similar_questions JSONB DEFAULT '[]',
-    tags JSONB DEFAULT '[]',
+    similar_questions JSONB DEFAULT '[]'::jsonb,
+    tags JSONB DEFAULT '[]'::jsonb,
     is_enabled BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_faq_owner ON faq_entries(owner_user_id);
+
+-- Normalize old TEXT[] FAQ columns to JSONB.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'faq_entries'
+          AND column_name = 'similar_questions'
+          AND udt_name = '_text'
+    ) THEN
+        ALTER TABLE faq_entries
+            ALTER COLUMN similar_questions TYPE JSONB
+            USING to_jsonb(COALESCE(similar_questions, ARRAY[]::TEXT[]));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'faq_entries'
+          AND column_name = 'tags'
+          AND udt_name = '_text'
+    ) THEN
+        ALTER TABLE faq_entries
+            ALTER COLUMN tags TYPE JSONB
+            USING to_jsonb(COALESCE(tags, ARRAY[]::TEXT[]));
+    END IF;
+END $$;
+
+ALTER TABLE faq_entries
+    ALTER COLUMN similar_questions SET DEFAULT '[]'::jsonb,
+    ALTER COLUMN tags SET DEFAULT '[]'::jsonb;
 
 -- 7. tags table
 CREATE TABLE IF NOT EXISTS tags (
@@ -67,3 +104,20 @@ CREATE TABLE IF NOT EXISTS entities (
 );
 CREATE INDEX IF NOT EXISTS idx_entities_document ON entities(document_id);
 CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
+
+-- 9. knowledge_bases table + kb_id on documents / faq_entries
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(200) NOT NULL,
+    tags TEXT[] DEFAULT '{}',
+    kb_type VARCHAR(20) NOT NULL CHECK (kb_type IN ('document', 'faq')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_owner ON knowledge_bases(owner_user_id);
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS knowledge_base_id UUID REFERENCES knowledge_bases(id) ON DELETE SET NULL;
+ALTER TABLE faq_entries ADD COLUMN IF NOT EXISTS knowledge_base_id UUID REFERENCES knowledge_bases(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_documents_kb ON documents(knowledge_base_id);
+CREATE INDEX IF NOT EXISTS idx_faq_entries_kb ON faq_entries(knowledge_base_id);

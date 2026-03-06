@@ -14,10 +14,23 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Knowledge bases table (知识库：文档型/问答型)
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(200) NOT NULL,
+    tags TEXT[] DEFAULT '{}',
+    kb_type VARCHAR(20) NOT NULL CHECK (kb_type IN ('document', 'faq')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_owner ON knowledge_bases(owner_user_id);
+
 -- Documents table
 CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    knowledge_base_id UUID REFERENCES knowledge_bases(id) ON DELETE SET NULL,
     title VARCHAR(500) NOT NULL,
     source_type VARCHAR(20) NOT NULL CHECK (source_type IN ('upload', 'url')),
     source_uri TEXT NOT NULL,
@@ -122,14 +135,18 @@ CREATE TABLE IF NOT EXISTS messages (
 -- Documents summary column
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary TEXT;
 
+-- Messages images column (stores base64 image data for multimodal)
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS images_json JSONB;
+
 -- FAQ entries table
 CREATE TABLE IF NOT EXISTS faq_entries (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    knowledge_base_id UUID REFERENCES knowledge_bases(id) ON DELETE SET NULL,
     question TEXT NOT NULL,
     answer TEXT NOT NULL,
-    similar_questions TEXT[] DEFAULT '{}',
-    tags TEXT[] DEFAULT '{}',
+    similar_questions JSONB DEFAULT '[]'::jsonb,
+    tags JSONB DEFAULT '[]'::jsonb,
     is_enabled BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -175,6 +192,8 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_tasks_status ON ingestion_tasks(status)
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_faq_entries_owner ON faq_entries(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_documents_kb ON documents(knowledge_base_id);
+CREATE INDEX IF NOT EXISTS idx_faq_entries_kb ON faq_entries(knowledge_base_id);
 CREATE INDEX IF NOT EXISTS idx_entities_type_value ON entities(entity_type, value);
 CREATE INDEX IF NOT EXISTS idx_entities_document ON entities(document_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
@@ -205,4 +224,3 @@ ON CONFLICT (name) DO NOTHING;
 INSERT INTO users (email, username, password_hash, role)
 VALUES ('admin@cypherguard.local', 'admin', '$argon2id$v=19$m=65536,t=3,p=4$vfc+55yzNiZE6F0LYcz53w$4rLeQcL/zK2Cm6kwqNXAE93YUnXCVGBi4MwK5N7Op4I', 'admin')
 ON CONFLICT (email) DO NOTHING;
-

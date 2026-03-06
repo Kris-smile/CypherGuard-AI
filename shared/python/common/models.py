@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models"""
 
 from sqlalchemy import Column, String, Integer, Float, Boolean, Text, TIMESTAMP, ForeignKey, ARRAY, JSON
-from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
+from sqlalchemy.dialects.postgresql import UUID, TSVECTOR, JSONB
 from sqlalchemy.sql import func
 import uuid
 from .database import Base
@@ -18,11 +18,24 @@ class User(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
 
+class KnowledgeBase(Base):
+    __tablename__ = "knowledge_bases"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(200), nullable=False)
+    tags = Column(ARRAY(Text), default=[])
+    kb_type = Column(String(20), nullable=False)  # 'document' | 'faq'
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Document(Base):
     __tablename__ = "documents"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_bases.id", ondelete="SET NULL"))
     title = Column(String(500), nullable=False)
     source_type = Column(String(20), nullable=False)
     source_uri = Column(Text, nullable=False)
@@ -127,6 +140,7 @@ class Message(Base):
     content = Column(Text, nullable=False)
     citations_json = Column(JSON)
     agent_steps = Column(JSON)
+    images_json = Column(JSON)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
 
@@ -135,10 +149,11 @@ class FAQEntry(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
+    knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_bases.id", ondelete="SET NULL"))
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
-    similar_questions = Column(ARRAY(Text), default=[])
-    tags = Column(ARRAY(Text), default=[])
+    similar_questions = Column(JSONB, default=list)
+    tags = Column(JSONB, default=list)
     is_enabled = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())

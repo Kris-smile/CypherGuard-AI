@@ -58,6 +58,7 @@ class DocumentCreate(BaseModel):
 class DocumentResponse(BaseModel):
     id: UUID
     owner_user_id: UUID
+    knowledge_base_id: Optional[UUID] = None
     title: str
     source_type: str
     source_uri: str
@@ -71,6 +72,57 @@ class DocumentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Knowledge base schemas
+class KnowledgeBaseCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    tags: Optional[List[str]] = None
+    kb_type: str = Field(..., pattern="^(document|faq)$")
+
+
+class KnowledgeBaseUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    tags: Optional[List[str]] = None
+
+
+class KnowledgeBaseResponse(BaseModel):
+    id: UUID
+    owner_user_id: UUID
+    name: str
+    tags: Optional[List[str]] = None
+    kb_type: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class KnowledgeBaseListResponse(KnowledgeBaseResponse):
+    document_count: int = 0
+    faq_count: int = 0
+
+
+# Knowledge base search result (keyword search within a KB)
+class KBSearchChunkItem(BaseModel):
+    chunk_id: UUID
+    document_id: UUID
+    document_title: str
+    snippet: str
+    chunk_index: int
+
+
+class KBSearchFAQItem(BaseModel):
+    faq_id: UUID
+    question: str
+    answer: str
+    snippet: str
+
+
+class KBSearchResponse(BaseModel):
+    chunks: List[KBSearchChunkItem] = []
+    faq: List[KBSearchFAQItem] = []
 
 
 # Task schemas
@@ -179,6 +231,7 @@ class Citation(BaseModel):
 class MessageCreate(BaseModel):
     content: str
     images: Optional[List[str]] = None
+    model_config_id: Optional[str] = None
 
 
 class MessageResponse(BaseModel):
@@ -187,6 +240,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     citations_json: Optional[List[Citation]] = None
+    images_json: Optional[List[str]] = None
     created_at: datetime
 
     class Config:
@@ -253,6 +307,7 @@ class FAQCreate(BaseModel):
     answer: str = Field(..., min_length=1)
     similar_questions: Optional[List[str]] = None
     tags: Optional[List[str]] = None
+    knowledge_base_id: Optional[UUID] = None
 
 
 class FAQUpdate(BaseModel):
@@ -266,6 +321,7 @@ class FAQUpdate(BaseModel):
 class FAQResponse(BaseModel):
     id: UUID
     owner_user_id: Optional[UUID]
+    knowledge_base_id: Optional[UUID] = None
     question: str
     answer: str
     similar_questions: Optional[List[str]]

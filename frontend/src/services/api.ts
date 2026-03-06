@@ -83,9 +83,42 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface KnowledgeBaseItem {
+  id: string;
+  owner_user_id: string;
+  name: string;
+  tags?: string[];
+  kb_type: 'document' | 'faq';
+  created_at: string;
+  updated_at: string;
+  document_count?: number;
+  faq_count?: number;
+}
+
+export interface KBSearchChunkItem {
+  chunk_id: string;
+  document_id: string;
+  document_title: string;
+  snippet: string;
+  chunk_index: number;
+}
+
+export interface KBSearchFAQItem {
+  faq_id: string;
+  question: string;
+  answer: string;
+  snippet: string;
+}
+
+export interface KBSearchResult {
+  chunks: KBSearchChunkItem[];
+  faq: KBSearchFAQItem[];
+}
+
 export interface Document {
   id: string;
   owner_user_id: string;
+  knowledge_base_id?: string | null;
   title: string;
   source_type: 'upload' | 'url';
   source_uri: string;
@@ -101,6 +134,7 @@ export interface Document {
 export interface FAQEntry {
   id: string;
   owner_user_id: string;
+  knowledge_base_id?: string | null;
   question: string;
   answer: string;
   similar_questions?: string[];
@@ -196,7 +230,9 @@ export interface Message {
   content: string;
   citations_json?: Citation[];
   agent_steps?: Array<{ round: number; llm_output: string; action?: string; observation?: string }>;
+  images_json?: string[];
   created_at: string;
+  _imagePreviews?: string[];
 }
 
 export interface ChatResponse {
@@ -280,11 +316,42 @@ export const authAPI = {
 // ============== KB API ==============
 
 export const kbAPI = {
-  uploadDocument: async (file: File, title?: string, tags?: string): Promise<Document> => {
+  // Knowledge bases
+  listKnowledgeBases: async (skip = 0, limit = 100): Promise<KnowledgeBaseItem[]> => {
+    const response = await apiClient.get<KnowledgeBaseItem[]>('/kb/knowledge-bases', { params: { skip, limit } });
+    return response.data;
+  },
+
+  createKnowledgeBase: async (data: { name: string; tags?: string[]; kb_type: 'document' | 'faq' }): Promise<KnowledgeBaseItem> => {
+    const response = await apiClient.post<KnowledgeBaseItem>('/kb/knowledge-bases', data);
+    return response.data;
+  },
+
+  getKnowledgeBase: async (id: string): Promise<KnowledgeBaseItem> => {
+    const response = await apiClient.get<KnowledgeBaseItem>(`/kb/knowledge-bases/${id}`);
+    return response.data;
+  },
+
+  updateKnowledgeBase: async (id: string, data: { name?: string; tags?: string[] }): Promise<KnowledgeBaseItem> => {
+    const response = await apiClient.put<KnowledgeBaseItem>(`/kb/knowledge-bases/${id}`, data);
+    return response.data;
+  },
+
+  deleteKnowledgeBase: async (id: string): Promise<void> => {
+    await apiClient.delete(`/kb/knowledge-bases/${id}`);
+  },
+
+  searchKnowledgeBase: async (kbId: string, q: string, limit = 20): Promise<KBSearchResult> => {
+    const response = await apiClient.get<KBSearchResult>(`/kb/knowledge-bases/${kbId}/search`, { params: { q, limit } });
+    return response.data;
+  },
+
+  uploadDocument: async (file: File, title?: string, tags?: string, knowledgeBaseId?: string): Promise<Document> => {
     const formData = new FormData();
     formData.append('file', file);
     if (title) formData.append('title', title);
     if (tags) formData.append('tags', tags);
+    if (knowledgeBaseId) formData.append('knowledge_base_id', knowledgeBaseId);
 
     const response = await apiClient.post<Document>('/kb/documents/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -297,8 +364,8 @@ export const kbAPI = {
     return response.data;
   },
 
-  listDocuments: async (skip = 0, limit = 100): Promise<Document[]> => {
-    const response = await apiClient.get<Document[]>('/kb/documents', { params: { skip, limit } });
+  listDocuments: async (skip = 0, limit = 100, knowledgeBaseId?: string): Promise<Document[]> => {
+    const response = await apiClient.get<Document[]>('/kb/documents', { params: { skip, limit, knowledge_base_id: knowledgeBaseId } });
     return response.data;
   },
 
@@ -340,13 +407,13 @@ export const kbAPI = {
   },
 
   // FAQ
-  listFAQ: async (): Promise<FAQEntry[]> => {
-    const response = await apiClient.get<FAQEntry[]>('/kb/faq');
+  createFAQ: async (data: { question: string; answer: string; similar_questions?: string[]; tags?: string[]; knowledge_base_id?: string }): Promise<FAQEntry> => {
+    const response = await apiClient.post<FAQEntry>('/kb/faq', data);
     return response.data;
   },
 
-  createFAQ: async (data: { question: string; answer: string; similar_questions?: string[]; tags?: string[] }): Promise<FAQEntry> => {
-    const response = await apiClient.post<FAQEntry>('/kb/faq', data);
+  listFAQ: async (skip = 0, limit = 100, knowledgeBaseId?: string): Promise<FAQEntry[]> => {
+    const response = await apiClient.get<FAQEntry[]>('/kb/faq', { params: { skip, limit, knowledge_base_id: knowledgeBaseId } });
     return response.data;
   },
 
@@ -388,6 +455,20 @@ export const kbAPI = {
     const response = await apiClient.get<EntityInfo[]>(`/kb/documents/${documentId}/entities`);
     return response.data;
   },
+
+  learnDocument: async (id: string): Promise<Document> => {
+    try {
+      const response = await apiClient.post<Document>(`/kb/documents/${id}/learn`);
+      return response.data;
+    } catch (error) {
+      // Compatibility fallback: older KB service builds expose /reindex but not /learn.
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        const response = await apiClient.post<Document>(`/kb/documents/${id}/reindex`);
+        return response.data;
+      }
+      throw error;
+    }
+  },
 };
 
 // ============== Chat API ==============
@@ -422,10 +503,10 @@ export const chatAPI = {
     return response.data;
   },
 
-  sendMessage: async (conversationId: string, content: string, images?: string[]): Promise<ChatResponse> => {
+  sendMessage: async (conversationId: string, content: string, images?: string[], modelConfigId?: string): Promise<ChatResponse> => {
     const response = await apiClient.post<ChatResponse>(
       `/chat/conversations/${conversationId}/messages`,
-      { content, images: images?.length ? images : undefined }
+      { content, images: images?.length ? images : undefined, model_config_id: modelConfigId || undefined }
     );
     return response.data;
   },
@@ -437,6 +518,7 @@ export const chatAPI = {
     onStatus?: (msg: string) => void,
     onDone?: (citations: Citation[]) => void,
     images?: string[],
+    modelConfigId?: string,
   ): Promise<void> => {
     const token = localStorage.getItem('access_token');
     const resp = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}/messages/stream`, {
@@ -445,7 +527,11 @@ export const chatAPI = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ content, images: images?.length ? images : undefined }),
+      body: JSON.stringify({
+        content,
+        images: images?.length ? images : undefined,
+        model_config_id: modelConfigId || undefined,
+      }),
     });
 
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -477,10 +563,10 @@ export const chatAPI = {
     }
   },
 
-  sendMessageAgent: async (conversationId: string, content: string, images?: string[]): Promise<ChatResponse> => {
+  sendMessageAgent: async (conversationId: string, content: string, images?: string[], modelConfigId?: string): Promise<ChatResponse> => {
     const response = await apiClient.post<ChatResponse>(
       `/chat/conversations/${conversationId}/messages/agent`,
-      { content, images: images?.length ? images : undefined }
+      { content, images: images?.length ? images : undefined, model_config_id: modelConfigId || undefined }
     );
     return response.data;
   },
@@ -489,10 +575,14 @@ export const chatAPI = {
 // ============== Settings API ==============
 
 export const settingsAPI = {
-  // Model Management
   listModels: async (): Promise<ModelConfig[]> => {
     const response = await apiClient.get<ModelConfig[]>('/models');
     return response.data;
+  },
+
+  listChatModels: async (): Promise<ModelConfig[]> => {
+    const models = await settingsAPI.listModels();
+    return models.filter(m => m.model_type === 'chat' && m.enabled);
   },
 
   getModel: async (id: string): Promise<ModelConfig> => {
