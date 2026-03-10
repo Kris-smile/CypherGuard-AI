@@ -337,7 +337,7 @@ class FAQResponse(BaseModel):
 # Tag schemas
 class TagCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    color: str = Field(default="#3B82F6", pattern="^#[0-9A-Fa-f]{6}$")
+    color: Optional[str] = Field(default=None)  # 前端未传或 null 时后端用默认 #3B82F6
 
 
 class TagResponse(BaseModel):

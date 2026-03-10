@@ -13,9 +13,10 @@ interface ChatProps {
   onConversationCreated?: (conv: Conversation) => void;
   selectedMode: string;
   useAgent: boolean;
+  selectedModelId?: string;
 }
 
-export default function Chat({ currentConversation, onConversationCreated, selectedMode, useAgent }: ChatProps) {
+export default function Chat({ currentConversation, onConversationCreated, selectedMode, useAgent, selectedModelId }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -124,7 +125,7 @@ export default function Chat({ currentConversation, onConversationCreated, selec
 
     try {
       if (useAgent) {
-        await chatAPI.sendMessageAgent(conv.id, userMessage);
+        await chatAPI.sendMessageAgent(conv.id, userMessage, imagesToSend, selectedModelId);
         await loadMessages(conv.id);
       } else {
         await chatAPI.sendMessageStream(
@@ -138,6 +139,7 @@ export default function Chat({ currentConversation, onConversationCreated, selec
             onConversationCreated?.(conv!);
           },
           imagesToSend,
+          selectedModelId,
         );
       }
     } catch (e) {
@@ -440,13 +442,22 @@ function MessageBubble({ message }: { message: Message }) {
         >
           {isUser ? (
             <>
-              {(message as any)._imagePreviews?.length > 0 && (
-                <div className="flex gap-2 mb-2 flex-wrap">
-                  {(message as any)._imagePreviews.map((src: string, i: number) => (
-                    <img key={i} src={src} alt="" className="h-24 w-24 object-cover rounded-lg border border-blue-400/30" />
-                  ))}
-                </div>
-              )}
+              {(() => {
+                const previews = message._imagePreviews;
+                const dbImages = message.images_json;
+                const imageSrcs = previews?.length ? previews
+                  : dbImages?.length ? dbImages.map(b64 =>
+                      b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`
+                    )
+                  : [];
+                return imageSrcs.length > 0 ? (
+                  <div className="flex gap-2 mb-2 flex-wrap">
+                    {imageSrcs.map((src: string, i: number) => (
+                      <img key={i} src={src} alt="" className="h-24 w-24 object-cover rounded-lg border border-blue-400/30" />
+                    ))}
+                  </div>
+                ) : null;
+              })()}
               <p className="whitespace-pre-wrap">{message.content}</p>
             </>
           ) : (

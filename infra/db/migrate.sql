@@ -1,4 +1,6 @@
 -- Migration: add new columns and tables for M1-M12 features
+-- 若执行卡住：多为其他服务占用表锁，请先停止 kb/chat 等服务再执行迁移。
+SET lock_timeout = '15s';
 
 -- 1. chunks table
 ALTER TABLE chunks ADD COLUMN IF NOT EXISTS tsv TSVECTOR;
@@ -29,6 +31,7 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS context_config JSONB DEFAULT 
 
 -- 4. messages table
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS agent_steps JSONB;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS images_json JSONB;
 
 -- 5. documents table
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary TEXT;

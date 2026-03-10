@@ -278,6 +278,7 @@ function KBDetailView({
   const [faqs, setFaqs] = useState<FAQEntry[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [learningId, setLearningId] = useState<string | null>(null);
+  const [faqImporting, setFaqImporting] = useState(false);
 
   const loadDocs = useCallback(async () => {
     if (kb.kb_type === 'document') {
@@ -369,6 +370,39 @@ function KBDetailView({
             {kb.tags && kb.tags.length > 0 && ` · ${kb.tags.join('、')}`}
           </p>
         </div>
+        {kb.kb_type === 'document' && (
+          <UploadDocumentButton kbId={kb.id} onUploaded={loadDocs} />
+        )}
+        {kb.kb_type === 'faq' && (
+          <label className={cn(
+            'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors',
+            faqImporting && 'opacity-50 pointer-events-none'
+          )}>
+            {faqImporting ? <Loader2 className="h-4 w-4 animate-spin text-slate-600" /> : <Upload className="h-4 w-4 text-slate-600" />}
+            {faqImporting ? '导入中...' : '导入 CSV'}
+            <input
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setFaqImporting(true);
+                try {
+                  const result = await kbAPI.importFAQCSV(file, kb.id);
+                  alert(`成功导入 ${result.imported} 条问答`);
+                  loadDocs();
+                } catch (err) {
+                  console.error('CSV import failed:', err);
+                  alert('CSV 导入失败，请检查文件格式（需包含 question、answer 列）');
+                } finally {
+                  setFaqImporting(false);
+                  e.target.value = '';
+                }
+              }}
+            />
+          </label>
+        )}
       </div>
 
       {/* 关键词搜索 */}
@@ -431,7 +465,6 @@ function KBDetailView({
                 <button onClick={loadDocs} className="p-2 hover:bg-slate-100 rounded-lg">
                   <RefreshCw className="h-4 w-4 text-slate-600" />
                 </button>
-                <UploadDocumentButton kbId={kb.id} onUploaded={loadDocs} />
               </div>
             </div>
             {loadingDocs ? (
@@ -440,6 +473,9 @@ function KBDetailView({
               <div className="text-center py-8 text-slate-500">
                 <FileText className="h-10 w-10 mx-auto mb-2 text-slate-300" />
                 <p>暂无文档，请上传</p>
+                <div className="mt-4 flex justify-center">
+                  <UploadDocumentButton kbId={kb.id} onUploaded={loadDocs} />
+                </div>
               </div>
             ) : (
               <div className="space-y-2">

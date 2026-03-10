@@ -105,7 +105,7 @@ export default function FAQManager({ knowledgeBaseId, onListChange }: FAQManager
     if (!file) return;
     setImporting(true);
     try {
-      const result = await kbAPI.importFAQCSV(file);
+      const result = await kbAPI.importFAQCSV(file, knowledgeBaseId);
       alert(`成功导入 ${result.imported} 条 FAQ`);
       await loadFAQs();
     } catch (err) {
@@ -138,16 +138,14 @@ export default function FAQManager({ knowledgeBaseId, onListChange }: FAQManager
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {!knowledgeBaseId && (
-            <label className={cn(
-              "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors shadow-sm",
-              importing && "opacity-50 pointer-events-none"
-            )}>
-              <Upload className="h-4 w-4 text-slate-600" />
-              {importing ? '导入中...' : 'CSV 导入'}
-              <input type="file" accept=".csv" onChange={handleCSVImport} className="hidden" />
-            </label>
-          )}
+          <label className={cn(
+            "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors shadow-sm",
+            importing && "opacity-50 pointer-events-none"
+          )}>
+            <Upload className="h-4 w-4 text-slate-600" />
+            {importing ? '导入中...' : 'CSV 导入'}
+            <input type="file" accept=".csv" onChange={handleCSVImport} className="hidden" />
+          </label>
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"

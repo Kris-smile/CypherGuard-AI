@@ -183,14 +183,24 @@ def rerank_documents(query: str, documents: List[str], top_n: int = 6) -> Option
         return None
 
 
-def generate_chat_response(messages: List[dict], context: str, images: Optional[List[str]] = None) -> str:
+def generate_chat_response(messages: List[dict], context: str,
+                           images: Optional[List[str]] = None,
+                           model_config_id: Optional[str] = None) -> str:
     if images and messages:
         for msg in reversed(messages):
             if msg.get("role") == "user":
-                msg["images"] = images
+                content = msg.get("content", "")
+                parts = [{"type": "text", "text": content}]
+                for img_b64 in images:
+                    prefix = img_b64 if img_b64.startswith("data:") else f"data:image/png;base64,{img_b64}"
+                    parts.append({"type": "image_url", "image_url": {"url": prefix}})
+                msg["content"] = parts
                 break
+    payload = {"messages": messages}
+    if model_config_id:
+        payload["model_config_id"] = model_config_id
     with httpx.Client(timeout=120.0) as client:
-        response = client.post(f"{MODEL_GATEWAY_URL}/internal/chat", json={"messages": messages})
+        response = client.post(f"{MODEL_GATEWAY_URL}/internal/chat", json=payload)
         response.raise_for_status()
         return response.json()["content"]
 
@@ -427,9 +437,14 @@ async def send_message(
     trace["top_n"] = mode.top_n
     trace["retrieval_strategy"] = strategy
 
-    user_message = Message(conversation_id=conversation_id, role="user", content=request.content)
+    user_message = Message(
+        conversation_id=conversation_id, role="user", content=request.content,
+        images_json=request.images if request.images else None
+    )
     session.add(user_message)
     session.commit()
+
+    chat_model_config_id = request.model_config_id
 
     # Step 0: Load conversation history + query rewrite
     ctx_config = conversation.context_config or {"strategy": "sliding_window", "window_size": 10}
@@ -531,7 +546,8 @@ async def send_message(
             answer = "⚠️ 警告：知识库中未找到相关证据。以下回答可能不准确，请谨慎参考。"
     else:
         messages = build_context_prompt(mode, final_chunks, request.content, history if history else None)
-        answer = generate_chat_response(messages, "", images=request.images)
+        answer = generate_chat_response(messages, "", images=request.images,
+                                        model_config_id=chat_model_config_id)
 
     trace["latency_ms"]["llm"] = int((time.time() - start_llm) * 1000)
     trace["latency_ms"]["total"] = int((time.time() - start_total) * 1000)
@@ -674,7 +690,10 @@ async def send_message_agent(
     if not mode:
         raise HTTPException(status_code=500, detail="对话模式配置异常")
 
-    user_message = Message(conversation_id=conversation_id, role="user", content=request.content)
+    user_message = Message(
+        conversation_id=conversation_id, role="user", content=request.content,
+        images_json=request.images if request.images else None
+    )
     session.add(user_message)
     session.commit()
 
@@ -718,10 +737,14 @@ async def send_message_stream(
     if not mode:
         raise HTTPException(status_code=500, detail="对话模式配置异常")
 
-    user_message = Message(conversation_id=conversation_id, role="user", content=request.content)
+    user_message = Message(
+        conversation_id=conversation_id, role="user", content=request.content,
+        images_json=request.images if request.images else None
+    )
     session.add(user_message)
     session.commit()
 
+    chat_model_config_id = request.model_config_id
     strategy = getattr(mode, "retrieval_strategy", "vector") or "vector"
     bm25_weight = getattr(mode, "bm25_weight", 0.3) or 0.3
 
@@ -808,15 +831,23 @@ async def send_message_stream(
         if request.images and llm_messages:
             for msg in reversed(llm_messages):
                 if msg.get("role") == "user":
-                    msg["images"] = request.images
+                    content = msg.get("content", "")
+                    parts = [{"type": "text", "text": content}]
+                    for img_b64 in request.images:
+                        prefix = img_b64 if img_b64.startswith("data:") else f"data:image/png;base64,{img_b64}"
+                        parts.append({"type": "image_url", "image_url": {"url": prefix}})
+                    msg["content"] = parts
                     break
         full_answer = ""
 
+        stream_payload = {"messages": llm_messages, "temperature": 0.7, "max_tokens": 2048}
+        if chat_model_config_id:
+            stream_payload["model_config_id"] = chat_model_config_id
         try:
             async with httpx.AsyncClient(timeout=300.0) as client:
                 async with client.stream(
                     "POST", f"{MODEL_GATEWAY_URL}/internal/chat/stream",
-                    json={"messages": llm_messages, "temperature": 0.7, "max_tokens": 2048}
+                    json=stream_payload
                 ) as resp:
                     async for line in resp.aiter_lines():
                         if not line.startswith("data: "):

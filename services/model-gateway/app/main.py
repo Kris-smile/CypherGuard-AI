@@ -141,7 +141,7 @@ class EmbeddingResponse(BaseModel):
     usage: Dict[str, int]
 
 class ChatRequest(BaseModel):
-    messages: List[Dict[str, str]]
+    messages: List[Dict[str, Any]]
     model: Optional[str] = None
     model_config_id: Optional[str] = None
     temperature: Optional[float] = 0.7
@@ -229,11 +229,37 @@ async def call_ollama_embedding(texts: List[str], mc: ModelConfig) -> EmbeddingR
     )
 
 
+def convert_messages_for_ollama(messages: list) -> list:
+    """Convert OpenAI vision-format messages to Ollama format (images field at message level)."""
+    converted = []
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            text_parts = []
+            images = []
+            for part in content:
+                if part.get("type") == "text":
+                    text_parts.append(part.get("text", ""))
+                elif part.get("type") == "image_url":
+                    url = part.get("image_url", {}).get("url", "")
+                    if url.startswith("data:"):
+                        b64 = url.split(",", 1)[-1] if "," in url else url
+                        images.append(b64)
+            new_msg = {"role": msg["role"], "content": "\n".join(text_parts)}
+            if images:
+                new_msg["images"] = images
+            converted.append(new_msg)
+        else:
+            converted.append(msg)
+    return converted
+
+
 async def call_ollama_chat(messages, mc: ModelConfig, temperature=0.7, max_tokens=2048) -> ChatResponse:
     base_url = mc.base_url or "http://localhost:11434"
+    ollama_messages = convert_messages_for_ollama(messages)
     response = await http_client.post(
         f"{base_url}/api/chat",
-        json={"model": mc.model_name, "messages": messages, "stream": False, "options": {"temperature": temperature, "num_predict": max_tokens}}
+        json={"model": mc.model_name, "messages": ollama_messages, "stream": False, "options": {"temperature": temperature, "num_predict": max_tokens}}
     )
     response.raise_for_status()
     data = response.json()
@@ -400,10 +426,11 @@ async def stream_openai_chat(messages, mc: ModelConfig, temperature=0.7, max_tok
 
 async def stream_ollama_chat(messages, mc: ModelConfig, temperature=0.7, max_tokens=2048) -> AsyncGenerator[str, None]:
     base_url = mc.base_url or "http://localhost:11434"
+    ollama_messages = convert_messages_for_ollama(messages)
     async with httpx.AsyncClient(timeout=300.0) as client:
         async with client.stream(
             "POST", f"{base_url}/api/chat",
-            json={"model": mc.model_name, "messages": messages, "stream": True,
+            json={"model": mc.model_name, "messages": ollama_messages, "stream": True,
                   "options": {"temperature": temperature, "num_predict": max_tokens}}
         ) as response:
             response.raise_for_status()

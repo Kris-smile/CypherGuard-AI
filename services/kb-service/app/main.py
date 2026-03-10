@@ -1,6 +1,6 @@
 """KB Service - Knowledge base document management"""
 
-from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, status, Form, Header
+from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, status, Form, Header, Query
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -319,8 +319,13 @@ async def upload_document(
     """Upload a document file."""
     user_id = user.sub
     doc_title = title or file.filename
-    tag_list = [t.strip() for t in tags.split(",")] if tags else None
-    kb_id = UUID(knowledge_base_id) if knowledge_base_id else None
+    tag_list = [t.strip() for t in (tags or "").split(",") if t.strip()] or None
+    kb_id = None
+    if knowledge_base_id and knowledge_base_id.strip():
+        try:
+            kb_id = UUID(knowledge_base_id)
+        except (ValueError, TypeError):
+            kb_id = None
 
     # Check file size
     file_content = await file.read()
@@ -660,12 +665,20 @@ async def delete_faq(
 @app.post("/kb/faq/import", status_code=status.HTTP_201_CREATED)
 async def import_faq_csv(
     file: UploadFile = File(...),
+    knowledge_base_id: Optional[UUID] = Query(None, description="归属的知识库 ID，不传则导入到全局 FAQ"),
     user: TokenPayload = Depends(get_current_user),
     session: Session = Depends(get_db)
 ):
     """Batch import FAQ from CSV (columns: question, answer, similar_questions, tags)."""
     import csv
     import io
+
+    if knowledge_base_id:
+        kb = session.query(KnowledgeBase).filter(KnowledgeBase.id == knowledge_base_id).first()
+        if not kb:
+            raise HTTPException(status_code=404, detail="知识库不存在")
+        if kb.owner_user_id != user.sub:
+            raise HTTPException(status_code=403, detail="无权限向该知识库导入")
 
     content = await file.read()
     text = content.decode("utf-8", errors="ignore")
@@ -680,8 +693,12 @@ async def import_faq_csv(
         similar = [s.strip() for s in row.get("similar_questions", "").split(";") if s.strip()]
         tags_list = [t.strip() for t in row.get("tags", "").split(",") if t.strip()]
         faq = FAQEntry(
-            owner_user_id=user.sub, question=question, answer=answer,
-            similar_questions=similar, tags=tags_list
+            owner_user_id=user.sub,
+            knowledge_base_id=knowledge_base_id,
+            question=question,
+            answer=answer,
+            similar_questions=similar,
+            tags=tags_list,
         )
         session.add(faq)
         created += 1
@@ -710,7 +727,10 @@ async def create_tag(
     existing = session.query(Tag).filter(Tag.name == data.name).first()
     if existing:
         raise HTTPException(status_code=409, detail=f"标签 '{data.name}' 已存在")
-    tag = Tag(name=data.name, color=data.color)
+    color = data.color or "#3B82F6"
+    if not (len(color) == 7 and color[0] == "#" and all(c in "0123456789AaBbCcDdEeFf" for c in color[1:])):
+        color = "#3B82F6"
+    tag = Tag(name=data.name, color=color)
     session.add(tag)
     session.commit()
     session.refresh(tag)

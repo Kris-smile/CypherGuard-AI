@@ -14,13 +14,14 @@ import {
   Bot,
   Trash2,
   MoreHorizontal,
+  Cpu,
 } from 'lucide-react';
 import { cn } from '../utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { chatAPI } from '../services/api';
-import type { Conversation } from '../services/api';
+import { chatAPI, settingsAPI } from '../services/api';
+import type { Conversation, ModelConfig } from '../services/api';
 import Chat from './Chat';
 import KnowledgeBase from './KnowledgeBase';
 import Settings from './Settings';
@@ -44,13 +45,14 @@ export default function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Chat state managed at Dashboard level
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [selectedMode, setSelectedMode] = useState('quick');
   const [useAgent, setUseAgent] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [chatModels, setChatModels] = useState<ModelConfig[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>('');
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -66,9 +68,25 @@ export default function Dashboard() {
     try { setConversations(await chatAPI.listConversations()); } catch (e) { console.error(e); }
   }, []);
 
+  const loadChatModels = useCallback(async () => {
+    try {
+      const models = await settingsAPI.listChatModels();
+      setChatModels(models);
+      const defaultModel = models.find(m => m.is_default);
+      if (defaultModel && !selectedModelId) {
+        setSelectedModelId(defaultModel.id);
+      } else if (models.length > 0 && !selectedModelId) {
+        setSelectedModelId(models[0].id);
+      }
+    } catch (e) { console.error(e); }
+  }, [selectedModelId]);
+
   useEffect(() => {
-    if (activeTab === 'chat') loadConversations();
-  }, [activeTab, loadConversations]);
+    if (activeTab === 'chat') {
+      loadConversations();
+      loadChatModels();
+    }
+  }, [activeTab, loadConversations, loadChatModels]);
 
   const handleNewConversation = async () => {
     const emptyConv = conversations.find(c => !c.title || c.title === '新对话');
@@ -114,12 +132,13 @@ export default function Dashboard() {
             onConversationCreated={handleConversationCreated}
             selectedMode={selectedMode}
             useAgent={useAgent}
+            selectedModelId={selectedModelId || undefined}
           />
         );
       case 'kb':
         return <KnowledgeBase />;
       case 'settings':
-        return <Settings />;
+        return <Settings onClose={() => setActiveTab('kb')} />;
       case 'profile':
         return <UserProfile onBack={() => setActiveTab('kb')} />;
       default:
@@ -278,6 +297,23 @@ export default function Dashboard() {
                   Agent
                 </button>
               </div>
+
+              {chatModels.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Cpu className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
+                  <select
+                    value={selectedModelId}
+                    onChange={(e) => setSelectedModelId(e.target.value)}
+                    className="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
+                  >
+                    {chatModels.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}{m.is_default ? ' (默认)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Conversation List */}

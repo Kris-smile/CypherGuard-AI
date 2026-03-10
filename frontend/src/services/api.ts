@@ -255,7 +255,7 @@ export interface ChatResponse {
 export interface ModelConfig {
   id: string;
   name: string;
-  model_type: 'embedding' | 'chat' | 'rerank';
+  model_type: 'embedding' | 'chat' | 'vision' | 'document' | 'rerank';
   provider: string;
   base_url?: string;
   model_name: string;
@@ -426,10 +426,12 @@ export const kbAPI = {
     await apiClient.delete(`/kb/faq/${id}`);
   },
 
-  importFAQCSV: async (file: File): Promise<{ imported: number; message: string }> => {
+  importFAQCSV: async (file: File, knowledgeBaseId?: string): Promise<{ imported: number; message: string }> => {
     const formData = new FormData();
     formData.append('file', file);
+    const params = knowledgeBaseId ? { knowledge_base_id: knowledgeBaseId } : {};
     const response = await apiClient.post('/kb/faq/import', formData, {
+      params,
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
@@ -442,7 +444,7 @@ export const kbAPI = {
   },
 
   createTag: async (name: string, color?: string): Promise<Tag> => {
-    const response = await apiClient.post<Tag>('/kb/tags', { name, color });
+    const response = await apiClient.post<Tag>('/kb/tags', { name, color: color || '#3B82F6' });
     return response.data;
   },
 
@@ -619,6 +621,7 @@ export const settingsAPI = {
     success: boolean;
     message: string;
     models: Array<{ name: string; size: number; modified_at: string }>;
+    all_models?: Array<{ name: string; size: number; modified_at: string }>;
     base_url: string;
   }> => {
     const response = await apiClient.post('/models/test-ollama-connection', {
