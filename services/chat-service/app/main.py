@@ -13,14 +13,15 @@ import sys
 import os
 import json
 import logging
+import re
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from common.config import Settings
 from common.database import Database
-from common.models import User, Mode, Conversation, Message, Chunk
+from common.models import User, Mode, Conversation, Message, Chunk, Document
 from common.schemas import (
-    ConversationCreate, ConversationResponse,
+    ConversationCreate, ConversationUpdate, ConversationResponse,
     MessageCreate, MessageResponse,
     ModeCreate, ModeUpdate, ModeResponse,
     ChatResponse, Citation
@@ -51,7 +52,7 @@ settings = Settings()
 db = Database(settings.postgres_url)
 
 qdrant_client = QdrantClient(url=settings.qdrant_url)
-COLLECTION_NAME = "kb_chunks_v1"
+COLLECTION_NAME = "kb_chunks_v2"
 
 MODEL_GATEWAY_URL = os.getenv("MODEL_GATEWAY_URL", "http://model-gateway:8000")
 
@@ -85,13 +86,32 @@ def get_embeddings(texts: List[str]) -> List[List[float]]:
         return response.json()["embeddings"]
 
 
-def search_qdrant(query_vector: List[float], top_k: int = 20) -> List[dict]:
+def get_document_ids_for_kbs(knowledge_base_ids: List[str], session: Session) -> List[str]:
+    """Get all document IDs belonging to the given knowledge bases."""
+    docs = session.query(Document.id).filter(
+        Document.knowledge_base_id.in_(knowledge_base_ids),
+        Document.status == 'ready'
+    ).all()
+    return [str(d.id) for d in docs]
+
+
+def search_qdrant(query_vector: List[float], top_k: int = 20,
+                  document_ids: Optional[List[str]] = None,
+                  knowledge_base_ids: Optional[List[str]] = None) -> List[dict]:
     try:
+        from qdrant_client.models import Filter, FieldCondition, MatchAny
+        conditions = []
+        if document_ids:
+            conditions.append(FieldCondition(key="document_id", match=MatchAny(any=document_ids)))
+        if knowledge_base_ids:
+            conditions.append(FieldCondition(key="knowledge_base_id", match=MatchAny(any=knowledge_base_ids)))
+        query_filter = Filter(must=conditions) if conditions else None
         results = qdrant_client.search(
             collection_name=COLLECTION_NAME,
             query_vector=query_vector,
             limit=top_k,
-            with_payload=True
+            with_payload=True,
+            query_filter=query_filter
         )
         return [{"id": str(r.id), "score": r.score, "payload": r.payload} for r in results]
     except Exception as e:
@@ -99,12 +119,27 @@ def search_qdrant(query_vector: List[float], top_k: int = 20) -> List[dict]:
         return []
 
 
-def search_bm25(query: str, top_k: int = 20, session: Session = None) -> List[dict]:
+def search_bm25(
+    query: str,
+    top_k: int = 20,
+    session: Session = None,
+    knowledge_base_ids: Optional[List[str]] = None,
+    document_ids: Optional[List[str]] = None,
+) -> List[dict]:
     """Full-text BM25 search using PostgreSQL tsvector/tsquery."""
     if not session:
         session = next(db.get_session())
     try:
-        sql = sql_text("""
+        kb_filter = ""
+        doc_filter = ""
+        params: dict = {"query": query, "top_k": top_k}
+        if knowledge_base_ids:
+            kb_filter = "AND d.knowledge_base_id = ANY(:kb_ids)"
+            params["kb_ids"] = knowledge_base_ids
+        if document_ids:
+            doc_filter = "AND d.id::text = ANY(:document_ids)"
+            params["document_ids"] = document_ids
+        sql = sql_text(f"""
             SELECT c.id, c.document_id, c.chunk_index, c.text, c.text_hash,
                    c.page_start, c.page_end,
                    d.title, d.source_type, d.source_uri,
@@ -114,10 +149,12 @@ def search_bm25(query: str, top_k: int = 20, session: Session = None) -> List[di
             WHERE c.tsv @@ plainto_tsquery('english', :query)
               AND c.is_enabled = true
               AND d.status = 'ready'
+              {kb_filter}
+              {doc_filter}
             ORDER BY rank DESC
             LIMIT :top_k
         """)
-        rows = session.execute(sql, {"query": query, "top_k": top_k}).fetchall()
+        rows = session.execute(sql, params).fetchall()
         results = []
         for row in rows:
             results.append({
@@ -138,6 +175,8 @@ def search_bm25(query: str, top_k: int = 20, session: Session = None) -> List[di
             })
         return results
     except Exception as e:
+        if session is not None:
+            session.rollback()
         logger.error(f"BM25 search error: {e}")
         return []
 
@@ -183,6 +222,414 @@ def rerank_documents(query: str, documents: List[str], top_n: int = 6) -> Option
         return None
 
 
+RERANK_SCORE_THRESHOLD = 0.05
+
+
+def validate_traceable_evidence(chunks: List[dict], session: Session) -> List[dict]:
+    """Filter chunks to only those with a traceable DB source record.
+
+    Web search and FAQ results are always accepted.  For document chunks,
+    verify the chunk exists and is enabled in PostgreSQL.
+    """
+    validated = []
+    for chunk in chunks:
+        payload = chunk.get("payload", {})
+        source_type = payload.get("source_type", "")
+        document_id = payload.get("document_id", "")
+
+        if source_type == "web_search":
+            validated.append(chunk)
+            continue
+
+        if document_id.startswith("faq_") or source_type == "faq":
+            validated.append(chunk)
+            continue
+
+        db_chunk_id = payload.get("db_chunk_id")
+        if db_chunk_id:
+            db_chunk = session.query(Chunk).filter(
+                Chunk.id == db_chunk_id, Chunk.is_enabled == True
+            ).first()
+            if db_chunk:
+                validated.append(chunk)
+                continue
+
+        chunk_index = payload.get("chunk_index", -1)
+        if document_id:
+            db_chunk = session.query(Chunk).filter(
+                Chunk.document_id == document_id,
+                Chunk.chunk_index == chunk_index,
+                Chunk.is_enabled == True,
+            ).first()
+            if db_chunk:
+                payload["db_chunk_id"] = str(db_chunk.id)
+                validated.append(chunk)
+                continue
+
+        logger.warning(f"Dropping untraceable chunk: doc={document_id} idx={chunk_index}")
+    return validated
+
+
+def build_citations_from_chunks(chunks: List[dict]) -> List['Citation']:
+    """Build Citation list from ranked chunks, preferring db_chunk_id for traceability."""
+    citations = []
+    for index, chunk in enumerate(chunks):
+        payload = chunk.get("payload", {})
+        chunk_id = payload.get("db_chunk_id") or payload.get("chunk_id", chunk.get("id", ""))
+        citations.append(Citation(
+            reference_id=index + 1,
+            document_id=payload.get("document_id", ""),
+            title=payload.get("title", "Unknown"),
+            source_type=payload.get("source_type", "upload"),
+            source_uri=payload.get("source_uri", ""),
+            chunk_id=chunk_id,
+            chunk_index=payload.get("chunk_index", 0),
+            page_start=payload.get("page_start"),
+            page_end=payload.get("page_end"),
+            snippet=payload.get("text", "")[:200],
+            score=chunk.get("rerank_score", chunk.get("rrf_score", chunk.get("score", 0)))
+        ))
+    return citations
+
+
+def build_reference_index(citations: List['Citation']) -> dict:
+    reference_index = {}
+    next_index = 1
+
+    for citation in citations:
+        key = (
+            citation.source_uri or "",
+            citation.document_id or "",
+            citation.title or "",
+            citation.source_type or "",
+        )
+        if key not in reference_index:
+            reference_index[key] = next_index
+            next_index += 1
+
+    return reference_index
+
+
+def append_reference_markers(answer: str, citations: List['Citation']) -> str:
+    if not answer or not citations or re.search(r"\[\d+\]", answer):
+        return answer
+
+    reference_index = build_reference_index(citations)
+    markers = []
+    seen = set()
+
+    for citation in citations:
+        key = (
+            citation.source_uri or "",
+            citation.document_id or "",
+            citation.title or "",
+            citation.source_type or "",
+        )
+        marker_number = reference_index.get(key)
+        if marker_number and marker_number not in seen:
+            seen.add(marker_number)
+            markers.append(f"[{marker_number}]")
+        if len(markers) >= 3:
+            break
+
+    if not markers:
+        return answer
+
+    return f"{answer.rstrip()}\n\n参考来源：{' '.join(markers)}"
+
+
+def parse_agent_tool_arg(raw_arg: str) -> str:
+    """Normalize agent tool arguments like `query="..."` into a plain value."""
+    arg = (raw_arg or "").strip()
+    if "=" in arg:
+        _, arg = arg.split("=", 1)
+    return arg.strip().strip("'\"")
+
+
+def build_no_evidence_answer(mode: Mode, web_enabled: bool = False, web_status: str = "disabled") -> str:
+    if web_enabled:
+        if web_status == "empty":
+            return "未找到相关搜索结果。"
+        if web_status == "timeout":
+            return "联网搜索超时，请稍后重试。"
+        if web_status == "error":
+            return "联网搜索出现异常，请稍后重试。"
+
+    if mode.no_evidence_behavior == "refuse":
+        return "抱歉，当前没有足够证据支持回答这个问题。"
+
+    return "当前没有检索到足够证据，以下回答可能不够准确，请谨慎参考。"
+
+
+def perform_web_search(query: str, max_results: int = 5) -> dict:
+    try:
+        from duckduckgo_search import DDGS
+
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+
+        if not results:
+            return {
+                "results": [],
+                "status": "empty",
+                "message": "未找到相关搜索结果",
+            }
+
+        chunks = []
+        for i, r in enumerate(results):
+            title = r.get("title", "Web Result")
+            body = r.get("body", "")
+            href = r.get("href", "")
+            chunks.append({
+                "id": f"web_{i}",
+                "score": 1.0 - i * 0.1,
+                "payload": {
+                    "chunk_id": f"web_{i}",
+                    "document_id": "web_search",
+                    "title": title,
+                    "source_type": "web_search",
+                    "source_uri": href,
+                    "chunk_index": i,
+                    "text": f"{title}\n{body}",
+                    "text_hash": "",
+                }
+            })
+
+        return {
+            "results": chunks,
+            "status": "success",
+            "message": "",
+        }
+    except Exception as e:
+        logger.warning(f"Web search failed: {e}")
+        error_text = str(e).lower()
+        status = "timeout" if "timeout" in error_text or "timed out" in error_text else "error"
+        message = "联网搜索超时" if status == "timeout" else "联网搜索失败"
+        return {
+            "results": [],
+            "status": status,
+            "message": message,
+        }
+
+
+def dedupe_chunks(chunks: List[dict]) -> List[dict]:
+    deduped = []
+    seen = set()
+
+    for chunk in chunks:
+        payload = chunk.get("payload", {})
+        key = (
+            payload.get("document_id", ""),
+            payload.get("db_chunk_id") or payload.get("chunk_id", chunk.get("id", "")),
+            payload.get("chunk_index", -1),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(chunk)
+
+    return deduped
+
+
+def build_selected_document_context(document_ids: List[str], session: Session) -> List[dict]:
+    """Build guaranteed context chunks for explicitly selected documents."""
+    if not document_ids:
+        return []
+
+    selected_docs = session.query(Document).filter(
+        Document.id.in_(document_ids),
+        Document.status == "ready",
+    ).all()
+    if not selected_docs:
+        return []
+
+    ordered_doc_ids = [str(doc_id) for doc_id in document_ids]
+    doc_by_id = {str(doc.id): doc for doc in selected_docs}
+    chunk_rows = session.query(Chunk).filter(
+        Chunk.document_id.in_([doc.id for doc in selected_docs]),
+        Chunk.is_enabled == True,
+    ).order_by(Chunk.document_id.asc(), Chunk.chunk_index.asc()).all()
+
+    first_chunk_by_doc: dict[str, Chunk] = {}
+    for chunk in chunk_rows:
+        chunk_doc_id = str(chunk.document_id)
+        if chunk_doc_id not in first_chunk_by_doc:
+            first_chunk_by_doc[chunk_doc_id] = chunk
+
+    context_chunks = []
+    for document_id in ordered_doc_ids:
+        doc = doc_by_id.get(document_id)
+        if not doc:
+            continue
+
+        first_chunk = first_chunk_by_doc.get(document_id)
+        summary_text = (doc.summary or "").strip()
+        excerpt_text = ((first_chunk.text or "").strip() if first_chunk else "")
+        parts = [
+            f"Selected document: {doc.title}",
+            f"Source type: {doc.source_type}",
+        ]
+        if doc.tags:
+            parts.append(f"Tags: {', '.join(doc.tags)}")
+        if summary_text:
+            parts.append(f"Summary: {summary_text}")
+        if excerpt_text:
+            parts.append(f"Excerpt: {excerpt_text[:800]}")
+        if not summary_text and not excerpt_text:
+            parts.append("No parsed summary is available yet for this document.")
+
+        context_chunks.append({
+            "id": f"selected_doc::{document_id}",
+            "score": 2.0,
+            "payload": {
+                "chunk_id": str(first_chunk.id) if first_chunk else f"selected_doc::{document_id}",
+                "db_chunk_id": str(first_chunk.id) if first_chunk else None,
+                "document_id": document_id,
+                "title": doc.title,
+                "source_type": doc.source_type,
+                "source_uri": doc.source_uri,
+                "chunk_index": first_chunk.chunk_index if first_chunk else -1,
+                "page_start": first_chunk.page_start if first_chunk else None,
+                "page_end": first_chunk.page_end if first_chunk else None,
+                "text": "\n".join(parts),
+                "text_hash": first_chunk.text_hash if first_chunk else "",
+                "selected_document_context": True,
+            }
+        })
+
+    return context_chunks
+
+
+def retrieve_evidence(
+    query: str,
+    mode: Mode,
+    session: Session,
+    knowledge_base_ids: Optional[List[str]] = None,
+    document_ids: Optional[List[str]] = None,
+    allow_web_search: bool = True,
+    enable_web_search_override: Optional[bool] = None,
+) -> dict:
+    """Shared retrieval pipeline for normal chat and agent tools."""
+    trace = {"retrieval_strategy": getattr(mode, "retrieval_strategy", "vector") or "vector", "latency_ms": {}}
+    strategy = trace["retrieval_strategy"]
+    bm25_weight = getattr(mode, "bm25_weight", 0.3) or 0.3
+
+    effective_document_ids = document_ids[:] if document_ids else None
+    if not effective_document_ids and knowledge_base_ids:
+        effective_document_ids = get_document_ids_for_kbs(knowledge_base_ids, session)
+    effective_knowledge_base_ids = knowledge_base_ids if not document_ids else None
+    selected_document_context = (
+        build_selected_document_context(effective_document_ids, session)
+        if document_ids
+        else []
+    )
+
+    vector_results = []
+    if strategy in ("vector", "hybrid"):
+        start_embed = time.time()
+        query_embeddings = get_embeddings([query])
+        query_vector = query_embeddings[0]
+        trace["latency_ms"]["embed"] = int((time.time() - start_embed) * 1000)
+
+        start_vector = time.time()
+        vector_results = search_qdrant(
+            query_vector,
+            top_k=mode.top_k,
+            document_ids=effective_document_ids,
+            knowledge_base_ids=effective_knowledge_base_ids,
+        )
+        trace["latency_ms"]["vector_search"] = int((time.time() - start_vector) * 1000)
+
+    bm25_results = []
+    if strategy in ("bm25", "hybrid"):
+        start_bm25 = time.time()
+        bm25_results = search_bm25(
+            query,
+            top_k=mode.top_k,
+            session=session,
+            knowledge_base_ids=effective_knowledge_base_ids,
+            document_ids=effective_document_ids,
+        )
+        trace["latency_ms"]["bm25_search"] = int((time.time() - start_bm25) * 1000)
+
+    if strategy == "hybrid" and vector_results and bm25_results:
+        search_results = rrf_merge(vector_results, bm25_results, bm25_weight=bm25_weight)
+    elif strategy == "bm25":
+        search_results = bm25_results
+    else:
+        search_results = vector_results
+
+    if selected_document_context:
+        search_results = dedupe_chunks(selected_document_context + search_results)
+
+    web_results = []
+    enable_web = (
+        enable_web_search_override
+        if enable_web_search_override is not None
+        else (getattr(mode, "enable_web_search", False) or False)
+    ) and allow_web_search
+    trace["web_search_enabled"] = enable_web
+    trace["web_search_status"] = "disabled"
+    trace["web_search_message"] = ""
+    if enable_web and len(search_results) < mode.top_n:
+        start_web = time.time()
+        web_search_response = perform_web_search(query, max_results=5)
+        web_results = web_search_response["results"]
+        search_results.extend(web_results)
+        trace["latency_ms"]["web_search"] = int((time.time() - start_web) * 1000)
+        trace["web_search_status"] = web_search_response["status"]
+        trace["web_search_message"] = web_search_response["message"]
+    elif enable_web:
+        trace["web_search_status"] = "skipped"
+
+    start_rerank = time.time()
+    if search_results:
+        documents = [r["payload"]["text"] for r in search_results[:mode.top_k]]
+        rerank_results = rerank_documents(query, documents, top_n=mode.top_n)
+        if rerank_results:
+            reranked_chunks = []
+            for rr in rerank_results:
+                if rr["score"] < RERANK_SCORE_THRESHOLD:
+                    continue
+                idx = rr["index"]
+                if idx < len(search_results):
+                    chunk = search_results[idx].copy()
+                    chunk["rerank_score"] = rr["score"]
+                    reranked_chunks.append(chunk)
+            final_chunks = reranked_chunks
+        else:
+            final_chunks = search_results[:mode.top_n]
+    else:
+        final_chunks = []
+    trace["latency_ms"]["rerank"] = int((time.time() - start_rerank) * 1000)
+
+    if final_chunks and mode.min_score > 0:
+        final_chunks = [
+            c for c in final_chunks
+            if c.get("score", 0) >= mode.min_score or c.get("rrf_score", 0) > 0
+        ]
+    if selected_document_context:
+        forced_context = selected_document_context[: min(len(selected_document_context), 3)]
+        final_chunks = dedupe_chunks(forced_context + final_chunks)
+    final_chunks = validate_traceable_evidence(final_chunks, session)
+    citations = build_citations_from_chunks(final_chunks)
+
+    trace["vector_count"] = len(vector_results)
+    trace["bm25_count"] = len(bm25_results)
+    trace["web_count"] = len(web_results)
+    trace["merged_count"] = len(search_results)
+    trace["traceable_count"] = len(final_chunks)
+    trace["selected_document_count"] = len(effective_document_ids or [])
+    trace["selected_document_context_count"] = len(selected_document_context)
+    trace["selected_kb_count"] = len(knowledge_base_ids or [])
+
+    return {
+        "final_chunks": final_chunks,
+        "citations": citations,
+        "trace": trace,
+    }
+
+
 def generate_chat_response(messages: List[dict], context: str,
                            images: Optional[List[str]] = None,
                            model_config_id: Optional[str] = None) -> str:
@@ -208,16 +655,36 @@ def generate_chat_response(messages: List[dict], context: str,
 def build_context_prompt(mode: Mode, chunks: List[dict], query: str,
                          history_messages: Optional[List[dict]] = None) -> List[dict]:
     context_parts = []
+    selected_titles = []
     for i, chunk in enumerate(chunks):
         payload = chunk.get("payload", chunk)
         text = payload.get("text", "")
         title = payload.get("title", "Unknown")
-        context_parts.append(f"[来源 {i+1}: {title}]\n{text}\n")
+        if payload.get("selected_document_context"):
+            selected_titles.append(title)
+        context_parts.append(f"[来源{i+1}: {title}]\n{text}\n")
     context_text = "\n".join(context_parts)
+    citation_instruction = (
+        "请严格基于提供的上下文回答问题。若使用了上下文中的内容，请在对应句子后追加引用标记，如 [1] [2]。"
+        "不要编造未出现在上下文中的文档或来源。"
+    )
+    selected_doc_instruction = ""
+    if selected_titles:
+        selected_doc_instruction = (
+            "The user explicitly selected these documents: "
+            + ", ".join(selected_titles[:5])
+            + ". Prioritize answering from these selected documents. "
+              "If the user asks which file is being referenced, explicitly name the selected document title(s). "
+              "Do not answer as if no document was selected.\n\n"
+        )
 
     msgs = [
-        {"role": "system", "content": f"{mode.system_prompt}\n\n知识库上下文:\n{context_text}"}
+        {"role": "system", "content": f"{mode.system_prompt}\n\n{selected_doc_instruction}以下是可引用的上下文：\n{context_text}"}
     ]
+    msgs[0]["content"] = (
+        f"{mode.system_prompt}\n\n{citation_instruction}\n\n"
+        + msgs[0]["content"].split("\n\n", 1)[1]
+    )
     if history_messages:
         msgs.extend(history_messages)
     msgs.append({"role": "user", "content": query})
@@ -236,33 +703,7 @@ def load_conversation_history(conversation_id, session, window_size: int = 10) -
 
 def web_search(query: str, max_results: int = 5) -> List[dict]:
     """Search the web using DuckDuckGo and return results as chunk-like structures."""
-    try:
-        from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
-        chunks = []
-        for i, r in enumerate(results):
-            title = r.get("title", "Web Result")
-            body = r.get("body", "")
-            href = r.get("href", "")
-            chunks.append({
-                "id": f"web_{i}",
-                "score": 1.0 - i * 0.1,
-                "payload": {
-                    "chunk_id": f"web_{i}",
-                    "document_id": f"web_search",
-                    "title": title,
-                    "source_type": "web_search",
-                    "source_uri": href,
-                    "chunk_index": i,
-                    "text": f"{title}\n{body}",
-                    "text_hash": "",
-                }
-            })
-        return chunks
-    except Exception as e:
-        logger.warning(f"Web search failed: {e}")
-        return []
+    return perform_web_search(query, max_results=max_results)["results"]
 
 
 def rewrite_query(query: str, history: List[dict]) -> str:
@@ -272,10 +713,10 @@ def rewrite_query(query: str, history: List[dict]) -> str:
     history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history[-6:])
     rewrite_messages = [
         {"role": "system", "content": (
-            "根据对话历史和最新问题，将问题改写为独立的检索查询。"
-            "只输出改写后的查询，不要其他内容。如果问题已经足够独立，原样返回。"
+            "你是查询改写助手。请结合历史对话，把用户当前问题改写成更适合知识库检索的一句话。"
+            "不要回答问题，只输出改写后的检索问句。"
         )},
-        {"role": "user", "content": f"对话历史:\n{history_text}\n\n最新问题: {query}"}
+        {"role": "user", "content": f"对话历史：\n{history_text}\n\n当前问题：{query}"}
     ]
     try:
         rewritten = generate_chat_response(rewrite_messages, "")
@@ -312,7 +753,7 @@ async def create_mode(
     """Create a new chat mode (admin only)."""
     existing = session.query(Mode).filter(Mode.name == data.name).first()
     if existing:
-        raise ConflictError(f"模式 '{data.name}' 已存在")
+        raise ConflictError(f"模式名称已存在: '{data.name}'")
     mode = Mode(**data.model_dump())
     session.add(mode)
     session.commit()
@@ -330,12 +771,12 @@ async def update_mode(
     """Update an existing chat mode (admin only)."""
     mode = session.query(Mode).filter(Mode.id == mode_id).first()
     if not mode:
-        raise NotFoundError("模式未找到")
+        raise NotFoundError("???")
     update_data = data.model_dump(exclude_unset=True)
     if "name" in update_data:
         existing = session.query(Mode).filter(Mode.name == update_data["name"], Mode.id != mode_id).first()
         if existing:
-            raise ConflictError(f"模式名 '{update_data['name']}' 已被使用")
+            raise ConflictError(f"模式名称已存在: '{update_data['name']}'")
     for key, value in update_data.items():
         setattr(mode, key, value)
     session.commit()
@@ -355,7 +796,7 @@ async def create_conversation(
     if not mode:
         mode = session.query(Mode).filter(Mode.name == "quick").first()
         if not mode:
-            raise HTTPException(status_code=404, detail="没有可用的对话模式")
+            raise HTTPException(status_code=404, detail="默认对话模式不存在")
     conversation = Conversation(user_id=user.sub, mode_id=mode.id, title=request.title)
     session.add(conversation)
     session.commit()
@@ -376,6 +817,45 @@ async def list_conversations(
     return [ConversationResponse.model_validate(c) for c in conversations]
 
 
+@app.put("/chat/conversations/{conversation_id}", response_model=ConversationResponse)
+async def update_conversation(
+    conversation_id: UUID,
+    request: ConversationUpdate,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    conversation = session.query(Conversation).filter(
+        Conversation.id == conversation_id, Conversation.user_id == user.sub
+    ).first()
+    if not conversation:
+        raise NotFoundError("???")
+    if request.title is not None:
+        conversation.title = request.title.strip() or None
+    session.commit()
+    session.refresh(conversation)
+    return ConversationResponse.model_validate(conversation)
+
+
+@app.post("/chat/conversations/{conversation_id}/title", response_model=ConversationResponse)
+async def update_conversation_title(
+    conversation_id: UUID,
+    request: ConversationUpdate,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    """Update conversation title via POST for compatibility with existing frontend."""
+    conversation = session.query(Conversation).filter(
+        Conversation.id == conversation_id, Conversation.user_id == user.sub
+    ).first()
+    if not conversation:
+        raise NotFoundError("???")
+    if request.title is not None:
+        conversation.title = request.title.strip() or None
+    session.commit()
+    session.refresh(conversation)
+    return ConversationResponse.model_validate(conversation)
+
+
 @app.delete("/chat/conversations/{conversation_id}", status_code=204)
 async def delete_conversation(
     conversation_id: UUID,
@@ -386,7 +866,7 @@ async def delete_conversation(
         Conversation.id == conversation_id, Conversation.user_id == user.sub
     ).first()
     if not conversation:
-        raise NotFoundError("对话未找到")
+        raise NotFoundError("???")
     session.query(Message).filter(Message.conversation_id == conversation_id).delete()
     session.delete(conversation)
     session.commit()
@@ -403,7 +883,7 @@ async def get_messages(
         Conversation.id == conversation_id, Conversation.user_id == user.sub
     ).first()
     if not conversation:
-        raise NotFoundError("对话未找到")
+        raise NotFoundError("???")
     messages = session.query(Message).filter(
         Message.conversation_id == conversation_id
     ).order_by(Message.created_at.asc()).all()
@@ -425,17 +905,14 @@ async def send_message(
         Conversation.id == conversation_id, Conversation.user_id == user.sub
     ).first()
     if not conversation:
-        raise NotFoundError("对话未找到")
+        raise NotFoundError("???")
 
     mode = session.query(Mode).filter(Mode.id == conversation.mode_id).first()
     if not mode:
         raise HTTPException(status_code=500, detail="对话模式配置异常")
 
-    strategy = getattr(mode, "retrieval_strategy", "vector") or "vector"
-    bm25_weight = getattr(mode, "bm25_weight", 0.3) or 0.3
     trace["top_k"] = mode.top_k
     trace["top_n"] = mode.top_n
-    trace["retrieval_strategy"] = strategy
 
     user_message = Message(
         conversation_id=conversation_id, role="user", content=request.content,
@@ -445,6 +922,8 @@ async def send_message(
     session.commit()
 
     chat_model_config_id = request.model_config_id
+    kb_ids = request.knowledge_base_ids
+    document_ids = request.document_ids
 
     # Step 0: Load conversation history + query rewrite
     ctx_config = conversation.context_config or {"strategy": "sliding_window", "window_size": 10}
@@ -452,102 +931,46 @@ async def send_message(
     history = load_conversation_history(conversation_id, session, window_size)
 
     start_rewrite = time.time()
-    search_query = rewrite_query(request.content, history) if history else request.content
+    rewrite_skipped = bool(document_ids)
+    search_query = request.content if rewrite_skipped else (rewrite_query(request.content, history) if history else request.content)
     trace["latency_ms"]["rewrite"] = int((time.time() - start_rewrite) * 1000)
+    trace["rewrite_skipped_due_to_document_scope"] = rewrite_skipped
     trace["rewritten_query"] = search_query
 
-    # Step 1: Embedding (needed for vector/hybrid)
-    vector_results = []
-    if strategy in ("vector", "hybrid"):
-        start_embed = time.time()
-        query_embeddings = get_embeddings([search_query])
-        query_vector = query_embeddings[0]
-        trace["latency_ms"]["embed"] = int((time.time() - start_embed) * 1000)
-
-        start_search = time.time()
-        vector_results = search_qdrant(query_vector, top_k=mode.top_k)
-        trace["latency_ms"]["vector_search"] = int((time.time() - start_search) * 1000)
-
-    # Step 2: BM25 search (needed for bm25/hybrid)
-    bm25_results = []
-    if strategy in ("bm25", "hybrid"):
-        start_bm25 = time.time()
-        bm25_results = search_bm25(search_query, top_k=mode.top_k, session=session)
-        trace["latency_ms"]["bm25_search"] = int((time.time() - start_bm25) * 1000)
-
-    # Step 3: Merge results
-    if strategy == "hybrid" and vector_results and bm25_results:
-        search_results = rrf_merge(vector_results, bm25_results, bm25_weight=bm25_weight)
-    elif strategy == "bm25":
-        search_results = bm25_results
-    else:
-        search_results = vector_results
-
-    # Step 3b: Web search supplement (if enabled and results insufficient)
-    enable_web = getattr(mode, "enable_web_search", False) or False
-    web_results = []
-    if enable_web and len(search_results) < mode.top_n:
-        start_web = time.time()
-        web_results = web_search(search_query, max_results=5)
-        search_results.extend(web_results)
-        trace["latency_ms"]["web_search"] = int((time.time() - start_web) * 1000)
-
-    trace["vector_count"] = len(vector_results)
-    trace["bm25_count"] = len(bm25_results)
-    trace["web_count"] = len(web_results)
-    trace["merged_count"] = len(search_results)
-
-    # Step 4: Rerank
-    start_rerank = time.time()
-    if search_results:
-        documents = [r["payload"]["text"] for r in search_results[:mode.top_k]]
-        rerank_results = rerank_documents(search_query, documents, top_n=mode.top_n)
-        if rerank_results:
-            reranked_chunks = []
-            for rr in rerank_results:
-                idx = rr["index"]
-                if idx < len(search_results):
-                    chunk = search_results[idx].copy()
-                    chunk["rerank_score"] = rr["score"]
-                    reranked_chunks.append(chunk)
-            final_chunks = reranked_chunks
-        else:
-            final_chunks = search_results[:mode.top_n]
-    else:
-        final_chunks = []
-    trace["latency_ms"]["rerank"] = int((time.time() - start_rerank) * 1000)
-
-    # Step 5: Build citations
-    citations = []
-    if final_chunks and mode.min_score > 0:
-        final_chunks = [c for c in final_chunks if c.get("score", 0) >= mode.min_score or c.get("rrf_score", 0) > 0]
-
-    for chunk in final_chunks:
-        payload = chunk.get("payload", {})
-        citations.append(Citation(
-            document_id=payload.get("document_id", ""),
-            title=payload.get("title", "Unknown"),
-            source_type=payload.get("source_type", "upload"),
-            source_uri=payload.get("source_uri", ""),
-            chunk_id=payload.get("chunk_id", chunk.get("id", "")),
-            chunk_index=payload.get("chunk_index", 0),
-            page_start=payload.get("page_start"),
-            page_end=payload.get("page_end"),
-            snippet=payload.get("text", "")[:200],
-            score=chunk.get("rerank_score", chunk.get("rrf_score", chunk.get("score", 0)))
-        ))
+    retrieval = retrieve_evidence(
+        search_query,
+        mode,
+        session,
+        knowledge_base_ids=kb_ids,
+        document_ids=document_ids,
+        allow_web_search=True,
+        enable_web_search_override=request.enable_web_search,
+    )
+    final_chunks = retrieval["final_chunks"]
+    citations = retrieval["citations"]
+    trace.update({k: v for k, v in retrieval["trace"].items() if k != "latency_ms"})
+    trace["latency_ms"].update(retrieval["trace"]["latency_ms"])
 
     # Step 6: Generate response
     start_llm = time.time()
     if not final_chunks and mode.require_citations:
         if mode.no_evidence_behavior == "refuse":
-            answer = "抱歉，无法从知识库中找到与您问题相关的信息。请尝试换个说法提问，或确认相关文档已上传到知识库。"
+            answer = "抱歉，当前没有足够证据支持回答这个问题。"
         else:
-            answer = "⚠️ 警告：知识库中未找到相关证据。以下回答可能不准确，请谨慎参考。"
+            answer = "当前没有检索到足够证据，以下回答可能不够准确，请谨慎参考。"
     else:
         messages = build_context_prompt(mode, final_chunks, request.content, history if history else None)
         answer = generate_chat_response(messages, "", images=request.images,
                                         model_config_id=chat_model_config_id)
+
+    if not final_chunks and mode.require_citations:
+        answer = build_no_evidence_answer(
+            mode,
+            web_enabled=trace.get("web_search_enabled", False),
+            web_status=trace.get("web_search_status", "disabled"),
+        )
+    else:
+        answer = append_reference_markers(answer, citations)
 
     trace["latency_ms"]["llm"] = int((time.time() - start_llm) * 1000)
     trace["latency_ms"]["total"] = int((time.time() - start_total) * 1000)
@@ -570,82 +993,90 @@ async def send_message(
 
 # ============== Agent Mode (ReACT) ==============
 
-AGENT_SYSTEM_PROMPT = """你是 CypherGuard AI 智能助手，具有以下工具：
+AGENT_SYSTEM_PROMPT = """You are CypherGuard AI. Use tools when needed.
 
-1. knowledge_search(query) - 在知识库中搜索相关信息
-2. web_search(query) - 在互联网上搜索实时信息
-3. get_document_info(document_id) - 获取文档详细信息
+1. knowledge_search(query) - search knowledge base
+2. web_search(query) - search the web
+3. get_document_info(document_id) - get document metadata
 
-请按以下格式推理：
-Thought: 分析问题，决定下一步操作
-Action: tool_name(参数)
-Observation: [工具返回结果]
-... (可重复多轮)
-Final Answer: 最终回答
-
-重要：每次只能使用一个工具。如果不需要工具，直接给出 Final Answer。"""
+Format: Thought: ... Action: tool_name("arg") Observation: [result] ... Final Answer: ...
+You must end with Final Answer:."""
 
 
-def run_agent(query: str, mode: Mode, session: Session, max_rounds: int = 5) -> tuple:
+def run_agent(
+    query: str,
+    mode: Mode,
+    session: Session,
+    knowledge_base_ids: Optional[List[str]] = None,
+    document_ids: Optional[List[str]] = None,
+    model_config_id: Optional[str] = None,
+    enable_web_search: Optional[bool] = None,
+    max_rounds: int = 5
+) -> tuple:
     """Run ReACT agent loop. Returns (answer, citations, agent_steps)."""
     agent_steps = []
     all_citations = []
-    context_texts = []
 
     messages = [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT + "\n\n" + (mode.system_prompt or "")},
+        {"role": "system", "content": (
+            AGENT_SYSTEM_PROMPT + "\n\n" + (mode.system_prompt or "") +
+            ("\n\nThe user has already limited the scope to selected knowledge bases or documents." if knowledge_base_ids else "")
+        )},
         {"role": "user", "content": query}
     ]
 
     for round_num in range(max_rounds):
-        response_text = generate_chat_response(messages, "")
+        response_text = generate_chat_response(messages, "", model_config_id=model_config_id)
         agent_steps.append({"round": round_num + 1, "llm_output": response_text})
 
         if "Final Answer:" in response_text:
             answer = response_text.split("Final Answer:")[-1].strip()
             return answer, all_citations, agent_steps
 
-        import re
         action_match = re.search(r"Action:\s*(\w+)\((.+?)\)", response_text)
         if not action_match:
             return response_text, all_citations, agent_steps
 
         tool_name = action_match.group(1)
-        tool_arg = action_match.group(2).strip().strip("'\"")
+        tool_arg = parse_agent_tool_arg(action_match.group(2))
         observation = ""
 
         if tool_name == "knowledge_search":
             try:
-                embeddings = get_embeddings([tool_arg])
-                results = search_qdrant(embeddings[0], top_k=mode.top_k)
+                retrieval = retrieve_evidence(
+                    tool_arg,
+                    mode,
+                    session,
+                    knowledge_base_ids=knowledge_base_ids,
+                    document_ids=document_ids,
+                    allow_web_search=False,
+                    enable_web_search_override=enable_web_search,
+                )
+                results = retrieval["final_chunks"]
                 if results:
                     obs_parts = []
-                    for r in results[:mode.top_n]:
-                        p = r["payload"]
+                    for r in results:
+                        p = r.get("payload", {})
                         obs_parts.append(f"[{p.get('title', 'N/A')}]: {p.get('text', '')[:300]}")
-                        all_citations.append(Citation(
-                            document_id=p.get("document_id", ""),
-                            title=p.get("title", ""),
-                            source_type=p.get("source_type", ""),
-                            source_uri=p.get("source_uri", ""),
-                            chunk_id=p.get("chunk_id", ""),
-                            chunk_index=p.get("chunk_index", 0),
-                            snippet=p.get("text", "")[:200],
-                            score=r.get("score", 0)
-                        ))
+                    all_citations.extend(retrieval["citations"])
                     observation = "\n".join(obs_parts)
                 else:
-                    observation = "知识库中未找到相关结果。"
+                    observation = "知识库中未找到相关内容。"
             except Exception as e:
-                observation = f"知识库搜索出错: {str(e)}"
+                session.rollback()
+                observation = f"知识库检索失败: {str(e)}"
 
         elif tool_name == "web_search":
-            web_results = web_search(tool_arg, max_results=3)
-            if web_results:
-                obs_parts = [f"[{r['payload']['title']}]: {r['payload']['text'][:200]}" for r in web_results]
-                observation = "\n".join(obs_parts)
+            if enable_web_search is False:
+                observation = "当前对话已禁用联网搜索。"
             else:
-                observation = "网络搜索无结果。"
+                web_results = web_search(tool_arg, max_results=3)
+                if web_results:
+                    obs_parts = [f"[{r['payload']['title']}]: {r['payload']['text'][:200]}" for r in web_results]
+                    all_citations.extend(build_citations_from_chunks(web_results))
+                    observation = "\n".join(obs_parts)
+                else:
+                    observation = "联网搜索未返回结果。"
 
         elif tool_name == "get_document_info":
             try:
@@ -654,9 +1085,10 @@ def run_agent(query: str, mode: Mode, session: Session, max_rounds: int = 5) -> 
                 if doc:
                     observation = f"标题: {doc.title}, 类型: {doc.source_type}, 状态: {doc.status}, 标签: {doc.tags}"
                 else:
-                    observation = "文档未找到。"
+                    observation = "未找到指定文档。"
             except Exception as e:
-                observation = f"查询出错: {str(e)}"
+                session.rollback()
+                observation = f"查询文档失败: {str(e)}"
         else:
             observation = f"未知工具: {tool_name}"
 
@@ -664,9 +1096,9 @@ def run_agent(query: str, mode: Mode, session: Session, max_rounds: int = 5) -> 
         agent_steps[-1]["observation"] = observation
 
         messages.append({"role": "assistant", "content": response_text})
-        messages.append({"role": "user", "content": f"Observation: {observation}\n\n请继续推理。"})
+        messages.append({"role": "user", "content": f"Observation: {observation}\n\n请继续推理，并最终给出 Final Answer。"})
 
-    return "达到最大推理轮次，请简化问题。", all_citations, agent_steps
+    return "已达到最大推理轮次，请直接给出当前最稳妥的结论。", all_citations, agent_steps
 
 
 @app.post("/chat/conversations/{conversation_id}/messages/agent", response_model=ChatResponse)
@@ -684,7 +1116,7 @@ async def send_message_agent(
         Conversation.id == conversation_id, Conversation.user_id == user.sub
     ).first()
     if not conversation:
-        raise NotFoundError("对话未找到")
+        raise NotFoundError("???")
 
     mode = session.query(Mode).filter(Mode.id == conversation.mode_id).first()
     if not mode:
@@ -697,7 +1129,16 @@ async def send_message_agent(
     session.add(user_message)
     session.commit()
 
-    answer, citations, agent_steps = run_agent(request.content, mode, session)
+    answer, citations, agent_steps = run_agent(
+        request.content,
+        mode,
+        session,
+        knowledge_base_ids=request.knowledge_base_ids,
+        document_ids=request.document_ids,
+        model_config_id=request.model_config_id,
+        enable_web_search=request.enable_web_search,
+    )
+    answer = append_reference_markers(answer, citations)
 
     trace["latency_ms"]["total"] = int((time.time() - start_total) * 1000)
     trace["agent_rounds"] = len(agent_steps)
@@ -731,7 +1172,7 @@ async def send_message_stream(
         Conversation.id == conversation_id, Conversation.user_id == user.sub
     ).first()
     if not conversation:
-        raise NotFoundError("对话未找到")
+        raise NotFoundError("???")
 
     mode = session.query(Mode).filter(Mode.id == conversation.mode_id).first()
     if not mode:
@@ -745,76 +1186,49 @@ async def send_message_stream(
     session.commit()
 
     chat_model_config_id = request.model_config_id
-    strategy = getattr(mode, "retrieval_strategy", "vector") or "vector"
-    bm25_weight = getattr(mode, "bm25_weight", 0.3) or 0.3
+    kb_ids = request.knowledge_base_ids
+    document_ids = request.document_ids
 
     ctx_config = conversation.context_config or {"strategy": "sliding_window", "window_size": 10}
     window_size = ctx_config.get("window_size", 10)
     history = load_conversation_history(conversation_id, session, window_size)
-    search_query = rewrite_query(request.content, history) if history else request.content
+    search_query = request.content if document_ids else (rewrite_query(request.content, history) if history else request.content)
 
     async def event_stream() -> AsyncGenerator[str, None]:
-        yield f"data: {json.dumps({'type': 'status', 'message': '正在检索知识库...'}, ensure_ascii=False)}\n\n"
-
-        vector_results = []
-        if strategy in ("vector", "hybrid"):
-            query_embeddings = get_embeddings([search_query])
-            query_vector = query_embeddings[0]
-            vector_results = search_qdrant(query_vector, top_k=mode.top_k)
-
-        bm25_results_local = []
-        if strategy in ("bm25", "hybrid"):
-            bm25_results_local = search_bm25(search_query, top_k=mode.top_k, session=session)
-
-        if strategy == "hybrid" and vector_results and bm25_results_local:
-            search_results = rrf_merge(vector_results, bm25_results_local, bm25_weight=bm25_weight)
-        elif strategy == "bm25":
-            search_results = bm25_results_local
-        else:
-            search_results = vector_results
-
-        yield f"data: {json.dumps({'type': 'status', 'message': '正在重排序...'}, ensure_ascii=False)}\n\n"
-
-        if search_results:
-            documents = [r["payload"]["text"] for r in search_results[:mode.top_k]]
-            rerank_results = rerank_documents(search_query, documents, top_n=mode.top_n)
-            if rerank_results:
-                final_chunks = []
-                for rr in rerank_results:
-                    idx = rr["index"]
-                    if idx < len(search_results):
-                        chunk = search_results[idx].copy()
-                        chunk["rerank_score"] = rr["score"]
-                        final_chunks.append(chunk)
-            else:
-                final_chunks = search_results[:mode.top_n]
-        else:
-            final_chunks = []
-
-        if final_chunks and mode.min_score > 0:
-            final_chunks = [c for c in final_chunks if c.get("score", 0) >= mode.min_score or c.get("rrf_score", 0) > 0]
-
-        citations = []
-        for chunk in final_chunks:
-            payload = chunk.get("payload", {})
-            citations.append(Citation(
-                document_id=payload.get("document_id", ""),
-                title=payload.get("title", "Unknown"),
-                source_type=payload.get("source_type", "upload"),
-                source_uri=payload.get("source_uri", ""),
-                chunk_id=payload.get("chunk_id", chunk.get("id", "")),
-                chunk_index=payload.get("chunk_index", 0),
-                page_start=payload.get("page_start"),
-                page_end=payload.get("page_end"),
-                snippet=payload.get("text", "")[:200],
-                score=chunk.get("rerank_score", chunk.get("rrf_score", chunk.get("score", 0)))
-            ))
+        search_status = "正在联网搜索..." if (
+            request.enable_web_search is True
+            or (
+                request.enable_web_search is None
+                and getattr(mode, "enable_web_search", False)
+            )
+        ) else "正在检索知识库..."
+        yield f"data: {json.dumps({'type': 'status', 'message': search_status}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'status', 'message': '正在整理检索结果...'}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'status', 'message': '正在重排候选内容...'}, ensure_ascii=False)}\n\n"
+        retrieval = retrieve_evidence(
+            search_query,
+            mode,
+            session,
+            knowledge_base_ids=kb_ids,
+            document_ids=document_ids,
+            allow_web_search=True,
+            enable_web_search_override=request.enable_web_search,
+        )
+        final_chunks = retrieval["final_chunks"]
+        citations = retrieval["citations"]
+        web_status = retrieval["trace"].get("web_search_status", "disabled")
+        web_message = retrieval["trace"].get("web_search_message", "")
+        if retrieval["trace"].get("web_search_enabled") and web_status in {"empty", "timeout", "error"}:
+            fallback_web_message = web_message or "未找到相关搜索结果"
+            yield f"data: {json.dumps({'type': 'status', 'message': fallback_web_message}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'status', 'message': '正在生成回答...'}, ensure_ascii=False)}\n\n"
 
         if not final_chunks and mode.require_citations:
-            if mode.no_evidence_behavior == "refuse":
-                answer_text = "抱歉，无法从知识库中找到与您问题相关的信息。请尝试换个说法提问，或确认相关文档已上传到知识库。"
-            else:
-                answer_text = "⚠️ 警告：知识库中未找到相关证据。以下回答可能不准确，请谨慎参考。"
+            answer_text = build_no_evidence_answer(
+                mode,
+                web_enabled=retrieval["trace"].get("web_search_enabled", False),
+                web_status=retrieval["trace"].get("web_search_status", "disabled"),
+            )
             yield f"data: {json.dumps({'type': 'token', 'content': answer_text}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'citations': [c.model_dump() for c in citations]}, ensure_ascii=False)}\n\n"
             assistant_msg = Message(
@@ -823,7 +1237,15 @@ async def send_message_stream(
             )
             session.add(assistant_msg)
             session.commit()
+
+            if not conversation.title:
+                conversation.title = request.content[:50] + ("..." if len(request.content) > 50 else "")
+                session.commit()
             return
+
+        if retrieval["trace"].get("web_search_enabled") and web_status in {"empty", "timeout", "error"}:
+            status_payload = {"type": "status", "message": web_message or "No related search results found."}
+            yield f"data: {json.dumps(status_payload, ensure_ascii=False)}\n\n"
 
         yield f"data: {json.dumps({'type': 'status', 'message': '正在生成回答...'}, ensure_ascii=False)}\n\n"
 
@@ -864,9 +1286,10 @@ async def send_message_stream(
                             continue
         except Exception as e:
             logger.error(f"Streaming LLM error: {e}")
-            full_answer = f"生成回答时出错: {str(e)}"
+            full_answer = "生成回答时出现异常，请稍后重试。"
             yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
 
+        full_answer = append_reference_markers(full_answer, citations)
         yield f"data: {json.dumps({'type': 'done', 'citations': [c.model_dump() for c in citations]}, ensure_ascii=False)}\n\n"
 
         assistant_msg = Message(
@@ -881,7 +1304,6 @@ async def send_message_stream(
             session.commit()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
-
 
 if __name__ == "__main__":
     import uvicorn

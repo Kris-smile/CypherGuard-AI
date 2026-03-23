@@ -41,6 +41,8 @@ class Document(Base):
     source_uri = Column(Text, nullable=False)
     mime_type = Column(String(100))
     status = Column(String(20), nullable=False, default="pending")
+    parse_status = Column(String(20), nullable=False, default="pending")
+    summary_status = Column(String(20), nullable=False, default="pending")
     tags = Column(ARRAY(Text))
     version = Column(Integer, default=1)
     summary = Column(Text)

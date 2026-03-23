@@ -25,7 +25,7 @@ from sqlalchemy import func
 
 from common.models import User, Document, IngestionTask, Chunk, FAQEntry, Tag, Entity, KnowledgeBase
 from common.schemas import (
-    DocumentResponse, TaskResponse, URLImportRequest,
+    DocumentBatchRequest, DocumentResponse, TaskResponse, URLImportRequest,
     FAQCreate, FAQUpdate, FAQResponse,
     TagCreate, TagResponse,
     ChunkResponse, ChunkUpdate,
@@ -35,6 +35,7 @@ from common.schemas import (
 )
 from common.auth import decode_token_payload, TokenPayload
 from common.exceptions import NotFoundError, AuthenticationError, AuthorizationError, ValidationError
+from common.document_status import normalize_document_status, queue_document_processing
 
 logger = logging.getLogger(__name__)
 
@@ -334,19 +335,29 @@ async def upload_document(
         raise ValidationError(f"文件大小超过限制 ({settings.upload_max_mb}MB)")
 
     # Check file extension (primary validation)
-    allowed_extensions = {".md", ".pdf", ".html", ".htm"}
+    allowed_extensions = {
+        ".md", ".pdf", ".html", ".htm", ".txt",
+        ".docx", ".xlsx", ".csv", ".pptx",
+    }
     filename = file.filename or ""
     file_ext = os.path.splitext(filename)[1].lower()
     if file_ext not in allowed_extensions:
         raise ValidationError(
-            f"不支持的文件格式「{file_ext}」，仅允许上传知识文档：{', '.join(sorted(allowed_extensions))}"
+            f"不支持的文件格式「{file_ext}」，仅允许：{', '.join(sorted(allowed_extensions))}"
         )
 
-    # Check MIME type (secondary validation, allow octet-stream for .md files)
+    # Check MIME type (secondary validation)
     allowed_types = [
         "application/pdf", "text/plain", "text/markdown",
         "text/html", "application/xhtml+xml",
-        "application/octet-stream",  # browsers may send this for .md files
+        "application/octet-stream",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-powerpoint",
     ]
     if file.content_type and file.content_type not in allowed_types:
         raise ValidationError(f"不支持的文件类型: {file.content_type}")
@@ -371,14 +382,26 @@ async def upload_document(
             source_type="upload",
             source_uri=f"s3://{settings.minio_bucket}/{object_name}",
             mime_type=file.content_type,
-            status="pending",
             tags=tag_list
         )
+        queue_document_processing(document)
         session.add(document)
         session.commit()
         session.refresh(document)
 
-        return DocumentResponse.model_validate(document)
+        task = celery_app.send_task("worker.process_document", args=[str(document.id)], queue="celery")
+
+        ingestion_task = IngestionTask(
+            document_id=document.id,
+            task_type="parse",
+            celery_task_id=task.id,
+            status="pending"
+        )
+        session.add(ingestion_task)
+        session.commit()
+        session.refresh(document)
+
+        return DocumentResponse.model_validate(normalize_document_status(document))
 
     except S3Error as e:
         raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
@@ -401,13 +424,14 @@ async def import_url(
     doc_title = request.title or validated_url
     document = Document(
         owner_user_id=user_id,
+        knowledge_base_id=request.knowledge_base_id,
         title=doc_title,
         source_type="url",
         source_uri=validated_url,
         mime_type="text/html",
-        status="pending",
         tags=request.tags
     )
+    queue_document_processing(document)
     session.add(document)
     session.commit()
     session.refresh(document)
@@ -423,7 +447,7 @@ async def import_url(
     session.add(ingestion_task)
     session.commit()
 
-    return DocumentResponse.model_validate(document)
+    return DocumentResponse.model_validate(normalize_document_status(document))
 
 
 @app.get("/kb/documents", response_model=List[DocumentResponse])
@@ -441,7 +465,25 @@ async def list_documents(
     if knowledge_base_id is not None:
         q = q.filter(Document.knowledge_base_id == knowledge_base_id)
     documents = q.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
-    return [DocumentResponse.model_validate(doc) for doc in documents]
+    return [DocumentResponse.model_validate(normalize_document_status(doc)) for doc in documents]
+
+
+@app.post("/kb/documents/batch", response_model=List[DocumentResponse])
+async def batch_get_documents(
+    request: DocumentBatchRequest,
+    user: TokenPayload = Depends(get_current_user),
+    session: Session = Depends(get_db)
+):
+    """Fetch a batch of documents for polling status updates."""
+    if not request.ids:
+        return []
+
+    documents = session.query(Document).filter(
+        Document.owner_user_id == user.sub,
+        Document.id.in_(request.ids),
+        Document.status != "deleted"
+    ).all()
+    return [DocumentResponse.model_validate(normalize_document_status(doc)) for doc in documents]
 
 
 @app.get("/kb/documents/{document_id}", response_model=DocumentResponse)
@@ -456,7 +498,7 @@ async def get_document(
     ).first()
     if not document:
         raise NotFoundError("文档未找到")
-    return DocumentResponse.model_validate(document)
+    return DocumentResponse.model_validate(normalize_document_status(document))
 
 
 @app.delete("/kb/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -496,7 +538,7 @@ async def reindex_document(
     # Delete existing chunks
     session.query(Chunk).filter(Chunk.document_id == document_id).delete()
 
-    document.status = "pending"
+    queue_document_processing(document)
     document.version = (document.version or 1) + 1
     session.commit()
     session.refresh(document)
@@ -519,7 +561,7 @@ async def reindex_document(
     session.add(ingestion_task)
     session.commit()
 
-    return DocumentResponse.model_validate(document)
+    return DocumentResponse.model_validate(normalize_document_status(document))
 
 
 @app.post("/kb/documents/{document_id}/learn", response_model=DocumentResponse)
@@ -538,13 +580,14 @@ async def learn_document(
 
     if document.status == "deleted":
         raise ValidationError("已删除的文档不能学习")
-    if document.status == "processing":
+    normalized_document = normalize_document_status(document)
+    if normalized_document.parse_status in {"pending", "processing"} or normalized_document.summary_status in {"pending", "processing"}:
         raise ValidationError("文档正在处理中，请稍后再试")
 
     session.query(Chunk).filter(Chunk.document_id == document_id).delete()
     session.query(Entity).filter(Entity.document_id == document_id).delete()
 
-    document.status = "processing"
+    queue_document_processing(document)
     document.version = (document.version or 1) + 1
     session.commit()
     session.refresh(document)
@@ -567,7 +610,7 @@ async def learn_document(
     session.add(ingestion_task)
     session.commit()
 
-    return DocumentResponse.model_validate(document)
+    return DocumentResponse.model_validate(normalize_document_status(document))
 
 
 @app.get("/kb/tasks", response_model=List[TaskResponse])

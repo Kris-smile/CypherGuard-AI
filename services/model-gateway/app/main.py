@@ -219,10 +219,30 @@ async def call_cohere_rerank(query, documents, mc: ModelConfig, top_n=5) -> Rera
 async def call_ollama_embedding(texts: List[str], mc: ModelConfig) -> EmbeddingResponse:
     base_url = mc.base_url or "http://localhost:11434"
     embeddings = []
-    for text in texts:
-        response = await http_client.post(f"{base_url}/api/embeddings", json={"model": mc.model_name, "prompt": text})
-        response.raise_for_status()
-        embeddings.append(response.json()["embedding"])
+    max_retries = 3
+    for i, text in enumerate(texts):
+        for attempt in range(max_retries):
+            try:
+                response = await http_client.post(
+                    f"{base_url}/api/embeddings",
+                    json={"model": mc.model_name, "prompt": text},
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                embeddings.append(response.json()["embedding"])
+                break
+            except httpx.HTTPStatusError as e:
+                logger.warning(f"Ollama embedding failed for text[{i}] attempt {attempt+1}: {e.response.status_code} {e.response.text[:200]}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    raise
+            except Exception as e:
+                logger.warning(f"Ollama embedding error for text[{i}] attempt {attempt+1}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    raise
     return EmbeddingResponse(
         embeddings=embeddings, model=mc.model_name,
         usage={"prompt_tokens": sum(len(t.split()) for t in texts), "total_tokens": sum(len(t.split()) for t in texts)}

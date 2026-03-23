@@ -25,6 +25,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils';
 import { settingsAPI, type ModelConfig } from '../services/api';
+import { SettingItem } from '../components/settings/SettingItem';
+import { SettingsSection } from '../components/settings/SettingsSection';
 
 // ============== Types & Constants ==============
 
@@ -217,6 +219,10 @@ export default function Settings({ onClose }: SettingsProps) {
       return <OllamaSettings baseUrl={ollamaBaseUrl} />;
     }
 
+    if (activeTab === 'system') {
+      return <SystemSettingsStatusContent />;
+    }
+
     const tabLabels: Record<string, string> = {
       general: '常规设置',
       'web-search': '网络搜索',
@@ -388,6 +394,53 @@ export default function Settings({ onClose }: SettingsProps) {
 }
 
 // ============== Sidebar Item ==============
+
+function SystemSettingsStatusContent() {
+  return (
+    <div className="max-w-5xl space-y-8 p-8">
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <h3 className="text-2xl font-bold text-slate-900">系统设置</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">
+              这里集中展示系统级能力的开发进度，便于后续继续扩展主题模式、联网搜索和插件系统。
+            </p>
+          </div>
+          <div className="hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right md:block">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Module Status
+            </p>
+            <p className="mt-1 text-sm font-medium text-slate-700">3 tracked features</p>
+          </div>
+        </div>
+      </div>
+
+      <SettingsSection
+        title="功能状态"
+        description="已完成、开发中和待上线能力采用统一状态徽标，方便后续继续接入更多系统模块。"
+      >
+        <SettingItem
+          title="主题模式"
+          description="当前系统主题样式已经完成，可作为后续外观切换能力的基础。"
+          status="completed"
+          icon={<SettingsIcon className="h-4 w-4" />}
+        />
+        <SettingItem
+          title="联网搜索"
+          description="正在持续完善搜索接入、结果整合和引用展示链路。"
+          status="developing"
+          icon={<Globe className="h-4 w-4" />}
+        />
+        <SettingItem
+          title="插件系统"
+          description="预留扩展位，后续将支持插件接入、安装和生命周期管理。"
+          status="coming_soon"
+          icon={<Wrench className="h-4 w-4" />}
+        />
+      </SettingsSection>
+    </div>
+  );
+}
 
 function SidebarItem({
   icon: Icon,

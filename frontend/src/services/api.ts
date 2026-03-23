@@ -124,6 +124,8 @@ export interface Document {
   source_uri: string;
   mime_type: string;
   status: 'pending' | 'processing' | 'ready' | 'failed' | 'deleted';
+  parse_status: 'pending' | 'processing' | 'completed' | 'failed';
+  summary_status: 'pending' | 'processing' | 'completed' | 'failed';
   tags?: string[];
   version: number;
   summary?: string;
@@ -211,6 +213,7 @@ export interface Conversation {
 }
 
 export interface Citation {
+  reference_id?: number;
   document_id: string;
   title: string;
   source_type: string;
@@ -221,6 +224,17 @@ export interface Citation {
   page_end?: number;
   snippet: string;
   score: number;
+}
+
+export interface SearchResultItem {
+  title: string;
+  snippet: string;
+  url: string;
+}
+
+export interface AnswerPayload {
+  answer: string;
+  references: Citation[];
 }
 
 export interface Message {
@@ -359,13 +373,21 @@ export const kbAPI = {
     return response.data;
   },
 
-  importUrl: async (url: string, title?: string, tags?: string[]): Promise<Document> => {
-    const response = await apiClient.post<Document>('/kb/documents/import-url', { url, title, tags });
+  importUrl: async (url: string, title?: string, tags?: string[], knowledgeBaseId?: string): Promise<Document> => {
+    const response = await apiClient.post<Document>('/kb/documents/import-url', {
+      url, title, tags,
+      knowledge_base_id: knowledgeBaseId || undefined,
+    });
     return response.data;
   },
 
   listDocuments: async (skip = 0, limit = 100, knowledgeBaseId?: string): Promise<Document[]> => {
     const response = await apiClient.get<Document[]>('/kb/documents', { params: { skip, limit, knowledge_base_id: knowledgeBaseId } });
+    return response.data;
+  },
+
+  batchGetDocuments: async (ids: string[]): Promise<Document[]> => {
+    const response = await apiClient.post<Document[]>('/kb/documents/batch', { ids });
     return response.data;
   },
 
@@ -489,6 +511,14 @@ export const chatAPI = {
     return response.data;
   },
 
+  updateConversation: async (conversationId: string, data: { title?: string }): Promise<Conversation> => {
+    const response = await apiClient.post<Conversation>(
+      `/chat/conversations/${conversationId}/title`,
+      data
+    );
+    return response.data;
+  },
+
   deleteConversation: async (conversationId: string): Promise<void> => {
     await apiClient.delete(`/chat/conversations/${conversationId}`);
   },
@@ -505,10 +535,25 @@ export const chatAPI = {
     return response.data;
   },
 
-  sendMessage: async (conversationId: string, content: string, images?: string[], modelConfigId?: string): Promise<ChatResponse> => {
+  sendMessage: async (
+    conversationId: string,
+    content: string,
+    images?: string[],
+    modelConfigId?: string,
+    knowledgeBaseIds?: string[],
+    documentIds?: string[],
+    enableWebSearch?: boolean,
+  ): Promise<ChatResponse> => {
     const response = await apiClient.post<ChatResponse>(
       `/chat/conversations/${conversationId}/messages`,
-      { content, images: images?.length ? images : undefined, model_config_id: modelConfigId || undefined }
+      {
+        content,
+        images: images?.length ? images : undefined,
+        model_config_id: modelConfigId || undefined,
+        knowledge_base_ids: knowledgeBaseIds?.length ? knowledgeBaseIds : undefined,
+        document_ids: documentIds?.length ? documentIds : undefined,
+        enable_web_search: enableWebSearch,
+      }
     );
     return response.data;
   },
@@ -521,6 +566,10 @@ export const chatAPI = {
     onDone?: (citations: Citation[]) => void,
     images?: string[],
     modelConfigId?: string,
+    knowledgeBaseIds?: string[],
+    documentIds?: string[],
+    enableWebSearch?: boolean,
+    signal?: AbortSignal,
   ): Promise<void> => {
     const token = localStorage.getItem('access_token');
     const resp = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}/messages/stream`, {
@@ -533,7 +582,11 @@ export const chatAPI = {
         content,
         images: images?.length ? images : undefined,
         model_config_id: modelConfigId || undefined,
+        knowledge_base_ids: knowledgeBaseIds?.length ? knowledgeBaseIds : undefined,
+        document_ids: documentIds?.length ? documentIds : undefined,
+        enable_web_search: enableWebSearch,
       }),
+      signal,
     });
 
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -543,32 +596,56 @@ export const chatAPI = {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const dataStr = line.slice(6).trim();
-        if (dataStr === '[DONE]') { onDone?.([]); return; }
-        try {
-          const data = JSON.parse(dataStr);
-          if (data.type === 'token') onToken(data.content || '');
-          else if (data.type === 'status') onStatus?.(data.message || '');
-          else if (data.type === 'done') onDone?.(data.citations || []);
-        } catch { /* skip parse errors */ }
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const dataStr = line.slice(6).trim();
+          if (dataStr === '[DONE]') { onDone?.([]); return; }
+          try {
+            const data = JSON.parse(dataStr);
+            if (data.type === 'token') onToken(data.content || '');
+            else if (data.type === 'status') onStatus?.(data.message || '');
+            else if (data.type === 'done') onDone?.(data.citations || []);
+          } catch { /* skip parse errors */ }
+        }
       }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        reader.cancel();
+        onDone?.([]); 
+        return;
+      }
+      throw e;
     }
   },
 
-  sendMessageAgent: async (conversationId: string, content: string, images?: string[], modelConfigId?: string): Promise<ChatResponse> => {
+  sendMessageAgent: async (
+    conversationId: string,
+    content: string,
+    images?: string[],
+    modelConfigId?: string,
+    knowledgeBaseIds?: string[],
+    documentIds?: string[],
+    enableWebSearch?: boolean,
+  ): Promise<ChatResponse> => {
     const response = await apiClient.post<ChatResponse>(
       `/chat/conversations/${conversationId}/messages/agent`,
-      { content, images: images?.length ? images : undefined, model_config_id: modelConfigId || undefined }
+      {
+        content,
+        images: images?.length ? images : undefined,
+        model_config_id: modelConfigId || undefined,
+        knowledge_base_ids: knowledgeBaseIds?.length ? knowledgeBaseIds : undefined,
+        document_ids: documentIds?.length ? documentIds : undefined,
+        enable_web_search: enableWebSearch,
+      }
     );
     return response.data;
   },

@@ -102,6 +102,9 @@ export default function DocumentDetail({ document: doc, onBack }: Props) {
     url: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   };
 
+  const isParsing = ['pending', 'processing'].includes(doc.parse_status);
+  const isSummarizing = doc.parse_status === 'completed' && ['pending', 'processing'].includes(doc.summary_status);
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
@@ -156,7 +159,17 @@ export default function DocumentDetail({ document: doc, onBack }: Props) {
                 <Brain className="h-5 w-5 text-purple-500" />
                 AI 自动摘要
               </h3>
-              {doc.summary ? (
+              {isParsing ? (
+                <div className="text-center py-8 text-slate-400">
+                  <Loader2 className="h-10 w-10 mx-auto mb-3 opacity-70 animate-spin" />
+                  <p>文档解析中，摘要将在解析完成后生成。</p>
+                </div>
+              ) : isSummarizing ? (
+                <div className="text-center py-8 text-slate-400">
+                  <Loader2 className="h-10 w-10 mx-auto mb-3 opacity-70 animate-spin" />
+                  <p>正在生成摘要，请稍后刷新查看。</p>
+                </div>
+              ) : doc.summary ? (
                 <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{doc.summary}</p>
               ) : (
                 <div className="text-center py-8 text-slate-400">

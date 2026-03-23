@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, Tag as TagIcon, Loader2, Palette } from 'lucide-react';
 import { kbAPI } from '../services/api';
 import type { Tag } from '../services/api';

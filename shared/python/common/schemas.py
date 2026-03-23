@@ -64,6 +64,8 @@ class DocumentResponse(BaseModel):
     source_uri: str
     mime_type: Optional[str]
     status: str
+    parse_status: str = "pending"
+    summary_status: str = "pending"
     tags: Optional[List[str]]
     version: int
     summary: Optional[str] = None
@@ -72,6 +74,10 @@ class DocumentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class DocumentBatchRequest(BaseModel):
+    ids: List[UUID] = Field(default_factory=list)
 
 
 # Knowledge base schemas
@@ -194,11 +200,16 @@ class URLImportRequest(BaseModel):
     url: str = Field(..., min_length=1)
     title: Optional[str] = None
     tags: Optional[List[str]] = None
+    knowledge_base_id: Optional[UUID] = None
 
 
 # Conversation schemas
 class ConversationCreate(BaseModel):
     mode_name: Optional[str] = "quick"
+    title: Optional[str] = None
+
+
+class ConversationUpdate(BaseModel):
     title: Optional[str] = None
 
 
@@ -215,6 +226,7 @@ class ConversationResponse(BaseModel):
 
 # Citation schema
 class Citation(BaseModel):
+    reference_id: Optional[int] = None
     document_id: str
     title: str
     source_type: str
@@ -232,6 +244,9 @@ class MessageCreate(BaseModel):
     content: str
     images: Optional[List[str]] = None
     model_config_id: Optional[str] = None
+    knowledge_base_ids: Optional[List[str]] = None
+    document_ids: Optional[List[str]] = None
+    enable_web_search: Optional[bool] = None
 
 
 class MessageResponse(BaseModel):
