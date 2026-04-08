@@ -1,0 +1,120 @@
+<mxfile host="app.diagrams.net" modified="2026-04-04T12:00:00.000Z" agent="Cursor" version="22.1.0">
+  <diagram id="biz-v2" name="主业务流程图">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="t0" value="&lt;b&gt;图：主业务流程&lt;/b&gt;（三条独立链路，自上而下：认证 → 文档摄取 → 智能对话）" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="24" width="720" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- ========== ① 认证链路（单行从左到右，无交叉） ========== -->
+        <mxCell id="r1" value="① 认证与访问" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=12;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="56" width="200" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="a_u" value="浏览器&#xa;注册/登录" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="84" width="100" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="a_g" value="gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="180" y="84" width="88" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="a_auth" value="auth-service&#xa;JWT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="308" y="84" width="110" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="a_pg" value="PostgreSQL&#xa;users / audit" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#ECEFF1;strokeColor=#455A64;" vertex="1" parent="1">
+          <mxGeometry x="458" y="78" width="120" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="ea1" style="endArrow=classic;html=1;rounded=0;strokeWidth=1;" edge="1" parent="1" source="a_u" target="a_g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea2" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="a_g" target="a_auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea3" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="a_auth" target="a_pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========== ② 文档摄取链路 ========== -->
+        <mxCell id="r2" value="② 文档摄取（同步写库与对象，异步解析与向量化）" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=12;fontColor=#F57F17;" vertex="1" parent="1">
+          <mxGeometry x="40" y="168" width="520" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="b_u" value="浏览器&#xa;上传/URL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;" vertex="1" parent="1">
+          <mxGeometry x="40" y="196" width="100" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="b_g" value="gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="180" y="196" width="88" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="b_kb" value="kb-service&#xa;元数据+任务" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="308" y="196" width="120" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="b_store" value="PostgreSQL&#xa;+ MinIO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="468" y="196" width="110" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="b_w" value="Redis +&#xa;Celery worker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFECB3;strokeColor=#FF6F00;" vertex="1" parent="1">
+          <mxGeometry x="618" y="196" width="110" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="b_q" value="Qdrant&#xa;kb_chunks_v2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="768" y="190" width="120" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="eb1" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="b_u" target="b_g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb2" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="b_g" target="b_kb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb3" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="b_kb" target="b_store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb4" value="异步" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeColor=#E65100;fontSize=10;" edge="1" parent="1" source="b_store" target="b_w">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb5" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeColor=#E65100;" edge="1" parent="1" source="b_w" target="b_q">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========== ③ 智能对话链路 ========== -->
+        <mxCell id="r3" value="③ 智能对话（检索 + 大模型生成 + 引用落库）" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=12;fontColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="480" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="c_u" value="浏览器&#xa;提问" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="40" y="308" width="88" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="c_g" value="gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="168" y="308" width="88" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="c_ch" value="chat-service&#xa;检索+拼上下文" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="296" y="308" width="130" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="c_data" value="Qdrant +&#xa;PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;" vertex="1" parent="1">
+          <mxGeometry x="466" y="308" width="110" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="c_mg" value="model-gateway&#xa;LLM API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;" vertex="1" parent="1">
+          <mxGeometry x="616" y="308" width="120" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="c_out" value="回答 +&#xa;citations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="776" y="308" width="100" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="ec1" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="c_u" target="c_g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec2" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="c_g" target="c_ch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec3" value="检索" style="endArrow=classic;html=1;rounded=0;fontSize=10;exitX=1;exitY=0.35;entryX=0;entryY=0.5;" edge="1" parent="1" source="c_ch" target="c_data">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec4" value="调用 LLM" style="endArrow=classic;html=1;rounded=0;fontSize=10;exitX=1;exitY=0.65;entryX=0;entryY=0.5;" edge="1" parent="1" source="c_ch" target="c_mg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec5" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="c_mg" target="c_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="leg" value="读图：三条链路自上而下并列，互不交叉。① 登录后获得 JWT。② 虚线为 Celery 异步（解析/向量化）。③ 自 chat-service 分出「检索」与「调用 LLM」两支，再汇总为带引用的回答。" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=11;fontColor=#555555;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="40" y="392" width="920" height="48" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

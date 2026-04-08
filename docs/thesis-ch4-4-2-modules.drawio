@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" modified="2026-04-04T00:00:00.000Z" agent="Cursor">
+  <diagram id="d2" name="4.2-功能模块">
+    <mxGraphModel dx="1100" dy="750" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="图 4-2 系统功能模块结构" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="16" width="320" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="L1" value="表现层（frontend）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontStyle=1;verticalAlign=top;spacingTop=8;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1040" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="登录 / 注册" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="88" width="100" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="知识库&#xa;KnowledgeBase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="88" width="120" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="文档详情&#xa;DocumentDetail" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="360" y="88" width="120" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="智能对话&#xa;Chat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="520" y="88" width="100" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="系统设置&#xa;Settings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="660" y="88" width="100" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" value="个人中心&#xa;UserProfile" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="800" y="88" width="100" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p7" value="公共：AuthContext&#xa;ProtectedRoute / api.ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F9A825;" vertex="1" parent="1">
+          <mxGeometry x="940" y="88" width="120" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="L2" value="网关层 gateway（Nginx）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontStyle=1;verticalAlign=top;spacingTop=8;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="1040" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="g" value="/auth  /kb  /chat  /models  （SSE 流式单独 location）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="280" y="208" width="520" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="L3" value="业务服务层" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontStyle=1;verticalAlign=top;spacingTop=8;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="1040" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" value="auth-service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="80" y="316" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="kb-service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="220" y="316" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" value="chat-service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="360" y="316" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="model-config-service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="500" y="316" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b5" value="model-gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;" vertex="1" parent="1">
+          <mxGeometry x="680" y="316" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b6" value="worker&#xa;(Celery)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFECB3;strokeColor=#FF6F00;" vertex="1" parent="1">
+          <mxGeometry x="840" y="316" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pg" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.15;entryY=0;" edge="1" parent="1" source="L1" target="L2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gz" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="L2" target="L3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="leg" value="说明：表现层通过统一 api.ts 访问网关；chat-service 内网调用 model-gateway；kb-service 投递任务给 worker。" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="900" height="36" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

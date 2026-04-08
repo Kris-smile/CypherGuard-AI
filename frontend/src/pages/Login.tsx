@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Lock, Mail, ArrowRight, Loader2, Eye, EyeOff, BrainCircuit, Activity, Network, ShieldAlert } from 'lucide-react';
+import { Shield, Lock, Mail, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -11,33 +11,11 @@ export default function Login() {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [displayText, setDisplayText] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     username: '',
     password: ''
   });
-
-  // 打字效果
-  useEffect(() => {
-    const fullText = '网络安全专家';
-    let i = 0;
-    
-    const typeInterval = setInterval(() => {
-      if (i < fullText.length) {
-        setDisplayText(fullText.substring(0, i + 1));
-        i++;
-      } else {
-        // 3秒后清空重新开始
-        setTimeout(() => {
-          i = 0;
-          setDisplayText('');
-        }, 3000);
-      }
-    }, 200);
-
-    return () => clearInterval(typeInterval);
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,44 +108,17 @@ export default function Login() {
               <Shield className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">CyberMind AI</h1>
-              <p className="text-slate-400 text-sm">智能网络安全知识体系</p>
+              <h1 className="text-2xl font-bold text-white">CypherGuard AI</h1>
+              <p className="text-slate-400 text-sm leading-snug max-w-md">
+                AI驱动的网络安全知识体系管理系统
+              </p>
             </div>
           </div>
 
-          {/* Tagline with Typewriter */}
           <div className="space-y-4">
-            <h2 className="text-4xl font-bold text-white leading-tight">
-              AI驱动的<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400">
-                {displayText}<span className="text-cyan-400 animate-pulse">|</span>
-              </span>
-            </h2>
             <p className="text-slate-400 text-lg leading-relaxed max-w-md">
               融合深度学习与威胁情报，构建企业级网络安全知识图谱。实时分析、智能推理、协同防御。
             </p>
-          </div>
-
-          {/* Feature Cards */}
-          <div className="grid grid-cols-2 gap-4 mt-8">
-            {[
-              { icon: BrainCircuit, title: 'AI 知识推理', desc: '基于大模型的智能关联分析', color: 'cyan' },
-              { icon: Activity, title: '实时威胁监测', desc: '毫秒级异常行为检测', color: 'emerald' },
-              { icon: Network, title: '知识图谱构建', desc: '自动化APT攻击链路溯源', color: 'blue' },
-              { icon: ShieldAlert, title: '智能防御策略', desc: '动态生成防护规则', color: 'purple' }
-            ].map((feature, idx) => (
-              <motion.div
-                key={idx}
-                whileHover={{ scale: 1.05 }}
-                className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition-all duration-300 group cursor-pointer"
-              >
-                <div className={`w-10 h-10 rounded-lg bg-${feature.color}-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
-                  <feature.icon className={`w-5 h-5 text-${feature.color}-400`} />
-                </div>
-                <h3 className="text-white font-semibold mb-1">{feature.title}</h3>
-                <p className="text-slate-400 text-sm">{feature.desc}</p>
-              </motion.div>
-            ))}
           </div>
         </div>
 
@@ -183,9 +134,9 @@ export default function Login() {
             <h3 className="text-2xl font-bold text-white mb-2">
               {isRegisterMode ? '创建账户' : '欢迎回来'}
             </h3>
-            <p className="text-slate-400">
-              {isRegisterMode ? '加入 CyberMind 安全社区' : '登录您的 CyberMind 账户'}
-            </p>
+            {isRegisterMode ? null : (
+              <p className="text-slate-400">登录您的 CypherGuard AI 账户</p>
+            )}
           </div>
 
           {/* Error Message */}

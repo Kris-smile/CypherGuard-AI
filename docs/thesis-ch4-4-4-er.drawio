@@ -1,0 +1,79 @@
+<mxfile host="app.diagrams.net" modified="2026-04-04T00:00:00.000Z" agent="Cursor">
+  <diagram id="er" name="4.4-E-R">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="图 4-6 核心实体关系（E-R 示意）" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="16" width="320" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="users" value="users" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="60" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="kb" value="knowledge_bases" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="180" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="doc" value="documents" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="320" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="chunk" value="chunks" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;" vertex="1" parent="1">
+          <mxGeometry x="80" y="440" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="task" value="ingestion_tasks" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFECB3;strokeColor=#FF6F00;" vertex="1" parent="1">
+          <mxGeometry x="240" y="440" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="faq" value="faq_entries" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="360" y="320" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mode" value="modes" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="180" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="conv" value="conversations" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="620" y="320" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="msg" value="messages" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="620" y="440" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mcfg" value="model_configs" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;" vertex="1" parent="1">
+          <mxGeometry x="520" y="60" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" value="audit_logs" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;" vertex="1" parent="1">
+          <mxGeometry x="600" y="60" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="1:n" style="endArrow=none;html=1;rounded=0;exitX=0;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="kb" target="users">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="1:n" style="endArrow=none;html=1;exitX=0;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="doc" target="users">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="n:1" style="endArrow=none;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="doc" target="kb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="1:n" style="endArrow=none;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="doc" target="chunk">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="1:n" style="endArrow=none;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="doc" target="task">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r6" value="n:1" style="endArrow=none;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="faq" target="kb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r7" value="n:1" style="endArrow=none;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="conv" target="users">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r8" value="n:1" style="endArrow=none;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="conv" target="mode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r9" value="1:n" style="endArrow=none;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="conv" target="msg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r10" value="n:1" style="endArrow=none;html=1;dashed=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="audit" target="users">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="leg" value="说明：model_configs 为全局配置，与 users 无直接外键；entities/tags 等可扩展画在侧页。详细字段见 4.4.2 节。" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="900" height="36" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

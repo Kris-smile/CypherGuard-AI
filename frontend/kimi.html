@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CyberMind AI - 智能网络安全知识系统</title>
+    <title>CypherGuard AI - AI驱动的网络安全知识体系管理系统</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -87,13 +87,6 @@
             100% { top: 100%; opacity: 0; }
         }
 
-        /* Typing Cursor */
-        .typing-cursor::after {
-            content: '|';
-            animation: blink 1s step-end infinite;
-            color: #06b6d4;
-        }
-        @keyframes blink { 50% { opacity: 0; } }
     </style>
 <base target="_blank">
 </head>
@@ -114,51 +107,15 @@
                     <i data-lucide="shield-check" class="w-7 h-7 text-white"></i>
                 </div>
                 <div>
-                    <h1 class="text-2xl font-bold text-white tracking-tight">CyberMind AI</h1>
-                    <p class="text-slate-400 text-sm">智能网络安全知识体系</p>
+                    <h1 class="text-2xl font-bold text-white tracking-tight">CypherGuard AI</h1>
+                    <p class="text-slate-400 text-sm leading-snug max-w-md">AI驱动的网络安全知识体系管理系统</p>
                 </div>
             </div>
 
             <div class="space-y-4">
-                <h2 class="text-4xl font-bold text-white leading-tight">
-                    AI驱动的<br>
-                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 typing-cursor" x-text="displayText" x-init="typeWriter()"></span>
-                </h2>
                 <p class="text-slate-400 text-lg leading-relaxed max-w-md">
                     融合深度学习与威胁情报，构建企业级网络安全知识图谱。实时分析、智能推理、协同防御。
                 </p>
-            </div>
-
-            <!-- Feature Bento Grid -->
-            <div class="grid grid-cols-2 gap-4 mt-8">
-                <div class="glass rounded-2xl p-4 hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
-                    <div class="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                        <i data-lucide="brain-circuit" class="w-5 h-5 text-cyan-400"></i>
-                    </div>
-                    <h3 class="text-white font-semibold mb-1">AI 知识推理</h3>
-                    <p class="text-slate-400 text-sm">基于大模型的智能关联分析</p>
-                </div>
-                <div class="glass rounded-2xl p-4 hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
-                    <div class="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                        <i data-lucide="activity" class="w-5 h-5 text-emerald-400"></i>
-                    </div>
-                    <h3 class="text-white font-semibold mb-1">实时威胁监测</h3>
-                    <p class="text-slate-400 text-sm">毫秒级异常行为检测</p>
-                </div>
-                <div class="glass rounded-2xl p-4 hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
-                    <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                        <i data-lucide="network" class="w-5 h-5 text-blue-400"></i>
-                    </div>
-                    <h3 class="text-white font-semibold mb-1">知识图谱构建</h3>
-                    <p class="text-slate-400 text-sm">自动化APT攻击链路溯源</p>
-                </div>
-                <div class="glass rounded-2xl p-4 hover:bg-slate-800/50 transition-all duration-300 group cursor-pointer">
-                    <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                        <i data-lucide="shield" class="w-5 h-5 text-purple-400"></i>
-                    </div>
-                    <h3 class="text-white font-semibold mb-1">智能防御策略</h3>
-                    <p class="text-slate-400 text-sm">动态生成防护规则</p>
-                </div>
             </div>
         </div>
 
@@ -169,7 +126,7 @@
             <div class="relative z-10">
                 <div class="text-center mb-8">
                     <h3 class="text-2xl font-bold text-white mb-2">欢迎回来</h3>
-                    <p class="text-slate-400">登录您的 CyberMind 账户</p>
+                    <p class="text-slate-400">登录您的 CypherGuard AI 账户</p>
                 </div>
 
                 <!-- Login Form -->
@@ -283,22 +240,6 @@
                 password: '',
                 showPassword: false,
                 loading: false,
-                displayText: '',
-                fullText: '网络安全专家',
-                typeWriter() {
-                    let i = 0;
-                    setInterval(() => {
-                        if (i < this.fullText.length) {
-                            this.displayText += this.fullText.charAt(i);
-                            i++;
-                        } else {
-                            setTimeout(() => {
-                                this.displayText = '';
-                                i = 0;
-                            }, 3000);
-                        }
-                    }, 200);
-                },
                 handleLogin() {
                     this.loading = true;
                     setTimeout(() => {

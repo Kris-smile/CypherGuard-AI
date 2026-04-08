@@ -1,0 +1,96 @@
+<mxfile host="app.diagrams.net" modified="2026-04-04T00:00:00.000Z" agent="Cursor">
+  <diagram id="fe" name="4.3.4-前端交互">
+    <mxGraphModel dx="1100" dy="780" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="图 4-5 前端交互结构（React SPA）" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="16" width="360" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="entry" value="main.tsx → App.tsx" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3949AB;" vertex="1" parent="1">
+          <mxGeometry x="480" y="48" width="160" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="auth" value="AuthProvider&#xa;（全局 token / user）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="104" width="240" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="router" value="React Router&#xa;/login  |  /dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="440" y="176" width="240" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="prot" value="ProtectedRoute&#xa;（未登录 → /login）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFECB3;strokeColor=#FF6F00;" vertex="1" parent="1">
+          <mxGeometry x="440" y="240" width="240" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="dash" value="Dashboard 壳层&#xa;侧栏 + 顶栏 + 内容区" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="300" width="240" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="tabs" value="activeTab 切换子页" style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="440" y="356" width="140" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="KnowledgeBase&#xa;知识库/文档/FAQ/标签" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="400" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="Chat&#xa;会话/模式/模型/引用" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="280" y="400" width="140" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="Settings&#xa;模型配置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="460" y="400" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="UserProfile&#xa;资料/改密" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="620" y="400" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="DocumentDetail&#xa;（文档子页）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1565C0;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="400" width="140" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="api" value="services/api.ts&#xa;axios（Bearer + 401 刷新）&#xa;→ 网关 /auth /kb /chat /models" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F9A825;" vertex="1" parent="1">
+          <mxGeometry x="360" y="500" width="400" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="endArrow=classic;html=1;" edge="1" parent="1" source="entry" target="auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="endArrow=classic;html=1;" edge="1" parent="1" source="auth" target="router">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="endArrow=classic;html=1;" edge="1" parent="1" source="router" target="prot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="endArrow=classic;html=1;" edge="1" parent="1" source="prot" target="dash">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="endArrow=classic;html=1;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="dash" target="p1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="dash" target="p2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="endArrow=classic;html=1;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="dash" target="p3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="endArrow=classic;html=1;" edge="1" parent="1" source="dash" target="p4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="p1" target="p5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p2" target="api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="350" y="480" />
+              <mxPoint x="560" y="480" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" style="endArrow=classic;html=1;" edge="1" parent="1" source="p1" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="endArrow=classic;html=1;" edge="1" parent="1" source="p3" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="endArrow=classic;html=1;" edge="1" parent="1" source="p4" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="leg" value="说明：Vite 构建；VITE_API_BASE_URL 指向网关。聊天组件含 MarkdownRenderer、AnswerReferences 等展示引用。" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="600" width="960" height="36" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

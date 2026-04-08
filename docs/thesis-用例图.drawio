@@ -1,0 +1,91 @@
+<mxfile host="app.diagrams.net" agent="Cursor">
+  <diagram id="uc-v2" name="用例图-3.2.2">
+    <mxGraphModel dx="1051" dy="775" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t0" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=12;" value="&lt;b&gt;图：系统用例图&lt;/b&gt;（左：参与者；中：系统边界内分「用户功能 / 管理功能」；管理员泛化普通用户）" vertex="1">
+          <mxGeometry height="28" width="900" x="110" y="25" as="geometry" />
+        </mxCell>
+        <mxCell id="bound" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#424242;strokeWidth=2;dashed=0;" value="" vertex="1">
+          <mxGeometry height="400" width="760" x="280" y="56" as="geometry" />
+        </mxCell>
+        <mxCell id="bound_lbl" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=13;" value="CypherGuard AI" vertex="1">
+          <mxGeometry height="24" width="200" x="292" y="62" as="geometry" />
+        </mxCell>
+        <mxCell id="zone_u" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;strokeWidth=1;fontStyle=1;fontColor=#0D47A1;verticalAlign=top;spacingTop=6;align=center;" value="用户功能" vertex="1">
+          <mxGeometry height="340" width="360" x="300" y="96" as="geometry" />
+        </mxCell>
+        <mxCell id="uc1" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1565C0;" value="账户与安全&#xa;（注册 / 登录 / 令牌 / 个人资料与密码）" vertex="1">
+          <mxGeometry height="64" width="240" x="360" y="136" as="geometry" />
+        </mxCell>
+        <mxCell id="uc2" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F9A825;" value="知识库与文档&#xa;（库管理、上传/URL、摄取状态、FAQ、标签、分块、关键词检索）" vertex="1">
+          <mxGeometry height="72" width="240" x="360" y="224" as="geometry" />
+        </mxCell>
+        <mxCell id="uc3" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2E7D32;" value="智能对话&#xa;（会话、模式、模型选择、回答与引用展示）" vertex="1">
+          <mxGeometry height="64" width="240" x="360" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="zone_a" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=1;fontStyle=1;fontColor=#4A148C;verticalAlign=top;spacingTop=6;align=center;" value="平台管理（仅 admin）" vertex="1">
+          <mxGeometry height="200" width="340" x="680" y="96" as="geometry" />
+        </mxCell>
+        <mxCell id="uc4" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7B1FA2;" value="模型配置管理&#xa;（embedding / chat / rerank / vision 等）" vertex="1">
+          <mxGeometry height="64" width="220" x="740" y="136" as="geometry" />
+        </mxCell>
+        <mxCell id="uc5" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7B1FA2;" value="对话模式管理&#xa;（modes：提示词、检索策略、引用策略等）" vertex="1">
+          <mxGeometry height="64" width="220" x="740" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="act_u" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#FFE0B2;strokeColor=#E65100;" value="" vertex="1">
+          <mxGeometry height="72" width="36" x="132" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="act_a" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#E1BEE7;strokeColor=#6A1B9A;" value="管理员" vertex="1">
+          <mxGeometry height="72" width="36" x="132" y="302" as="geometry" />
+        </mxCell>
+        <mxCell id="gen" edge="1" parent="1" source="act_a" style="endArrow=block;endSize=14;endFill=0;html=1;rounded=0;exitX=0.5;exitY=0;strokeWidth=1.5;" target="act_u" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="150" y="188" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gen_txt" parent="1" style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#666666;" value="泛化" vertex="1">
+          <mxGeometry height="18" width="40" x="168" y="248" as="geometry" />
+        </mxCell>
+        <mxCell id="l1" edge="1" parent="1" source="act_u" style="endArrow=none;html=1;rounded=0;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" target="uc1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l2" edge="1" parent="1" source="act_u" style="endArrow=none;html=1;rounded=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="uc2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l3" edge="1" parent="1" source="act_u" style="endArrow=none;html=1;rounded=0;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" target="uc3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l4" edge="1" parent="1" source="act_a" style="endArrow=none;html=1;rounded=0;exitX=1;exitY=0.35;entryX=0;entryY=0.5;edgeStyle=orthogonalEdgeStyle;" target="uc4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="168" y="325" />
+              <mxPoint x="240" y="325" />
+              <mxPoint x="240" y="391" />
+              <mxPoint x="690" y="391" />
+              <mxPoint x="690" y="168" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l5" edge="1" parent="1" source="act_a" style="endArrow=none;html=1;rounded=0;exitX=1;exitY=0.65;entryX=0;entryY=0.5;edgeStyle=orthogonalEdgeStyle;" target="uc5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="168" y="347" />
+              <mxPoint x="216" y="347" />
+              <mxPoint x="216" y="424" />
+              <mxPoint x="720" y="424" />
+              <mxPoint x="720" y="252" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=11;fontColor=#555555;" value="说明：三个用户用例为聚合表述，论文正文可在 3.2.3 用例规约中拆分为细项。管理员经泛化继承普通用户全部能力；图中仅画出其额外关联的管理用例。" vertex="1">
+          <mxGeometry height="40" width="1000" x="114" y="494" as="geometry" />
+        </mxCell>
+        <mxCell id="eyDe5MmldMYjIff-d9zg-3" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;普通用户&lt;/span&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="120" y="86" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

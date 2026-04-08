@@ -1,0 +1,93 @@
+<mxfile host="app.diagrams.net" modified="2026-04-04T00:00:00.000Z" agent="Cursor">
+  <diagram id="d1" name="4.1-部署架构">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="图 4-1 系统部署架构（Docker Compose）" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="16" width="400" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="c1" value="浏览器" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="56" width="100" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="gateway&#xa;(Nginx :80)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="200" y="56" width="120" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="frontend&#xa;(Vite :5173 开发态)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="56" width="140" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="endArrow=classic;html=1;" edge="1" parent="1" source="c1" target="c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="c1" target="c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="row2" value="业务微服务（容器内 :8000）" style="text;html=1;strokeColor=none;fillColor=none;fontStyle=1;fontSize=11;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="130" width="280" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="auth-service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="40" y="156" width="100" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="kb-service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="160" y="156" width="100" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="chat-service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="280" y="156" width="100" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="model-config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="400" y="156" width="100" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="model-gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;" vertex="1" parent="1">
+          <mxGeometry x="520" y="156" width="110" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="worker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFECB3;strokeColor=#FF6F00;" vertex="1" parent="1">
+          <mxGeometry x="660" y="156" width="80" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="gw2" style="endArrow=classic;html=1;entryX=0;entryY=0.5;exitX=1;exitY=1;" edge="1" parent="1" source="c2" target="s1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="340" y="120" />
+              <mxPoint x="90" y="120" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="row3" value="基础设施" style="text;html=1;strokeColor=none;fillColor=none;fontStyle=1;fontSize=11;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="PostgreSQL" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#ECEFF1;strokeColor=#455A64;" vertex="1" parent="1">
+          <mxGeometry x="40" y="248" width="110" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" value="Redis" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#FFEBEE;strokeColor=#C62828;" vertex="1" parent="1">
+          <mxGeometry x="180" y="248" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="d3" value="MinIO" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#E3F2FD;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="300" y="248" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="d4" value="Qdrant" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="420" y="248" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="leg" value="说明：浏览器经网关访问 API；前端开发态可直连页面。chat-service 经内网调用 model-gateway；worker 消费 Redis、读写 MinIO/PG/Qdrant。" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2d" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="s2" target="d3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2r" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="s2" target="d2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s2pg" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="s2" target="d1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3q" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="s3" target="d4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_s3pg" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="s3" target="d1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_w" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="s6" target="d2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
